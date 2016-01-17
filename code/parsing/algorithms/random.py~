@@ -1,0 +1,13 @@
+import numpy as np
+
+def fit(features, labels, model_path=None, save_every_iterations=False):
+    pass
+
+def predict(sentence_list):
+    predictions = []
+    for sentence in sentence_list:
+        predictions.append([])
+        for token_feature in sentence:
+            predictions[-1].append(np.random.uniform(0.0, 1.0, len(sentence)))
+
+    return predictions
