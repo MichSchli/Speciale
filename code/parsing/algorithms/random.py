@@ -8,6 +8,6 @@ def predict(sentence_list, model_path=None):
     for sentence in sentence_list:
         predictions.append([])
         for token_feature in sentence:
-            predictions[-1].append(np.random.uniform(0.0, 1.0, len(sentence)))
+            predictions[-1].append(np.random.uniform(0.0, 1.0, len(sentence)+1))
 
     return predictions
