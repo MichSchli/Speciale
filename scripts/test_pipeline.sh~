@@ -16,9 +16,10 @@ fi
 INPUT_FILE=$1
 FEATURE_FILE=$INPUT_FILE'.feature'
 GRAPH_FILE=$INPUT_FILE'.graph'
+OUTPUT_FILE=$INPUT_FILE'.prediction'
 
 ALGORITHM=$2
 
 MODEL_PATH=models/$ALGORITHM'.model'
 
-python code/parsing/train.py --features $FEATURE_FILE --sentences $GRAPH_FILE --model_path $MODEL_PATH --algorithm $ALGORITHM
+python code/parsing/predict.py --features $FEATURE_FILE --sentences $GRAPH_FILE --model_path $MODEL_PATH --algorithm $ALGORITHM --outfile $OUTPUT_FILE

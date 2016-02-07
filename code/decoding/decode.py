@@ -9,6 +9,7 @@ io = imp.load_source('io', 'code/common/io.py')
 parser = argparse.ArgumentParser(description="Convert a reference-to-head formt to a graph-format.")
 parser.add_argument("--infile", help="Input filepath (CoNLL format).", required=True)
 parser.add_argument("--outfile", help="Output filepath (CoNLL format).", required=True)
+parser.add_argument("--verbose", help="Print updates after each sentence.", required=False, action="store_true")
 args = parser.parse_args()
 
 sentences = io.read_conll_sentences(args.infile)
@@ -25,7 +26,9 @@ def __find_mst(graph):
 
     return nx.adjacency_matrix(MSA).todense().transpose()*(-1)
     
-for sentence in sentences:
+for sentence_idx,sentence in enumerate(sentences):
+    if args.verbose:
+        print("Decoding sentence "+str(sentence_idx)+"...", end='\r')
     deplist = [token['dependency_graph'] for token in sentence]
 
     sentence_graph = np.vstack(deplist)
