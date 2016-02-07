@@ -12,7 +12,7 @@ class RNN():
     W_output = None
     
     max_words = None
-    input_dimension = 5
+    input_dimension = 50
     hidden_dimension = 5
     
     '''
@@ -44,7 +44,12 @@ class RNN():
         results = self.__theano_batch_predict(sentence_list)
 
         return results
-        
+
+    def loss(self, sentence_list, gold_list):
+        results = self.__theano_batch_loss(sentence_list, gold_list)
+
+        return results
+    
     '''
     Theano functions:
     '''
@@ -156,7 +161,28 @@ class RNN():
             actual_result.append(m[:l, :l+1])
 
         return actual_result
+
+    def __theano_batch_loss_inner(self, Vs, ls):
+        results = self.__theano_batch_predict_inner(Vs, ls)
+        stacked_results = results.transpose(1,2,0).flatten(2)
+        #stacked_golds = T.stack(Gs, axis=0)
+
+        return stacked_results
+        
     
+    def __theano_batch_loss(self, sentence_list, gold_list):
+        padded_sentences = self.__pad_sentences(sentence_list)
+
+        Vs = T.dtensor3('Vs')
+        ls = theano.shared(np.array([len(sentence) for sentence in sentence_list]))
+
+        results = self.__theano_batch_loss_inner(Vs, ls)
+        c_graph = theano.function(inputs=[Vs], outputs = results)
+        
+        theano_result = c_graph(padded_sentences)
+
+        return theano_result
+        
 
     def __pad_sentences(self, sentence_list):
         longest_sentence = max([len(x) for x  in sentence_list])
@@ -187,5 +213,4 @@ def fit(sentence_instances, sentence_labels, model_path=None, save_every_iterati
     padded_labels = __pad_labels(sentence_labels)
     model = RNN(padded_labels.shape[1])
 
-    for q in model.predict(sentence_instances[:20]):
-        print(q.shape)
+    print(model.loss(sentence_instances[:3], None).shape)

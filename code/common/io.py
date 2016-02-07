@@ -10,10 +10,9 @@ def conll_list_to_dict(token_list):
 
     token_dict = {}
     for i in range(len(token_list)):
-        if token_list[i] != '_':
-            header_name = conll_column_headers[i][0]
-            header_type = conll_column_headers[i][1]
-            token_dict[header_name] =  header_type(token_list[i])
+        header_name = conll_column_headers[i][0]
+        header_type = conll_column_headers[i][1]
+        token_dict[header_name] =  header_type(token_list[i])
 
     return token_dict
 
