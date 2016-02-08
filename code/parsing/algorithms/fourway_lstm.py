@@ -18,15 +18,12 @@ class RNN():
     def __init__(self):
         self.W_final = np.random.rand(self.hidden_dimension*4+1)
 
-        self.W_forward_forget = np.random.rand(self.hidden_dimension, self.input_dimension*2 + self.hidden_dimension + 1)
-        self.W_forward_input = np.random.rand(self.hidden_dimension, self.input_dimension*2 + self.hidden_dimension + 1)
-        self.W_forward_cell = np.random.rand(self.hidden_dimension, self.input_dimension*2 + self.hidden_dimension + 1)
-        self.W_forward_output = np.random.rand(self.hidden_dimension, self.input_dimension*2 + self.hidden_dimension + 1)
-
-        self.W_backward_forget = np.random.rand(self.hidden_dimension, self.input_dimension*2 + self.hidden_dimension + 1)
-        self.W_backward_input = np.random.rand(self.hidden_dimension, self.input_dimension*2 + self.hidden_dimension + 1)
-        self.W_backward_cell = np.random.rand(self.hidden_dimension, self.input_dimension*2 + self.hidden_dimension + 1)
-        self.W_backward_output = np.random.rand(self.hidden_dimension, self.input_dimension*2 + self.hidden_dimension + 1)
+        n_lstm_layers = 4
+        
+        self.W_forget = np.random.rand(n_lstm_layers, self.hidden_dimension, self.input_dimension*2 + self.hidden_dimension + 1)
+        self.W_input = np.random.rand(n_lstm_layers, self.hidden_dimension, self.input_dimension*2 + self.hidden_dimension + 1)
+        self.W_cell = np.random.rand(n_lstm_layers, self.hidden_dimension, self.input_dimension*2 + self.hidden_dimension + 1)
+        self.W_output = np.random.rand(n_lstm_layers, self.hidden_dimension, self.input_dimension*2 + self.hidden_dimension + 1)
 
 
     '''
@@ -81,9 +78,17 @@ class RNN():
     def __theano_out_node(self, H, W_o):
         output_with_bias = T.concatenate((H, [1]))
         return T.dot(W_o, output_with_bias)
+
+    def __theano_sentence_loss(self, Vs, sentence_length, W_final,
+                                     W_forget, W_input, W_cell, W_output, gold):
+        preds = self.__theano_sentence_prediction(Vs, sentence_length, W_final, W_forget, W_input, W_cell, W_output)
+
+        losses = T.nnet.categorical_crossentropy(preds, gold)
+
+        return T.sum(losses)
     
     def __theano_sentence_prediction(self, Vs, sentence_length, W_final,
-                                     W_forget, W_input, W_cell, W_output):#, W_forget_b, W_input_b, W_cell_b, W_output_b):
+                                     W_forget, W_input, W_cell, W_output):
 
         #Make pairwise features:
         pairwise_vs, _ = theano.scan(fn=self.__pairwise_features,
@@ -95,24 +100,24 @@ class RNN():
         lstm_sidewards_forwards, _ = theano.scan(fn=self.__theano_lstm_layer,
                                                  outputs_info=None,
                                                  sequences=pairwise_vs,
-                                                 non_sequences=[W_forget, W_input, W_cell, W_output, 1])
+                                                 non_sequences=[W_forget[0], W_input[0], W_cell[0], W_output[0], 1])
 
         lstm_sidewards_backwards, _ = theano.scan(fn=self.__theano_lstm_layer,
                                                  outputs_info=None,
                                                  sequences=pairwise_vs,
-                                                 non_sequences=[W_forget, W_input, W_cell, W_output, 0])
+                                                 non_sequences=[W_forget[1], W_input[1], W_cell[1], W_output[1], 0])
 
         transpose_vs = pairwise_vs.transpose(1,0,2)
 
         lstm_downwards_forwards, _ = theano.scan(fn=self.__theano_lstm_layer,
                                                  outputs_info=None,
                                                  sequences=transpose_vs,
-                                                 non_sequences=[W_forget, W_input, W_cell, W_output, 1])
+                                                 non_sequences=[W_forget[2], W_input[2], W_cell[2], W_output[2], 1])
 
         lstm_downwards_backwards, _ = theano.scan(fn=self.__theano_lstm_layer,
                                                  outputs_info=None,
                                                  sequences=transpose_vs,
-                                                 non_sequences=[W_forget, W_input, W_cell, W_output, 0])
+                                                 non_sequences=[W_forget[3], W_input[3], W_cell[3], W_output[3], 0])
 
         full_lstm = T.concatenate((lstm_sidewards_forwards, lstm_sidewards_forwards, lstm_downwards_forwards.transpose(1,0,2), lstm_downwards_backwards.transpose(1,0,2)), axis=2)
 
@@ -127,19 +132,20 @@ class RNN():
         return T.nnet.softmax(matrix_outputs)
         
     #For testing:
-    def single_predict(self, sentence):
+    def single_predict(self, sentence, gold):
         Vs = T.dmatrix('Vs')
-        W_forget = T.dmatrix('W_forget')
-        W_input = T.dmatrix('W_input')
-        W_cell = T.dmatrix('W_cell')
-        W_output = T.dmatrix('W_output')
+        W_forget = T.dtensor3('W_forget')
+        W_input = T.dtensor3('W_input')
+        W_cell = T.dtensor3('W_cell')
+        W_output = T.dtensor3('W_output')
         W_final = T.vector('W_final')
+        Gs = T.dmatrix('Gs')
         
-        result = self.__theano_sentence_prediction(Vs, len(sentence), W_final, W_forget, W_input, W_cell, W_output)
-        cgraph = theano.function(inputs=[Vs, W_final, W_forget, W_input, W_cell, W_output], on_unused_input='warn', outputs=result)
+        result = self.__theano_sentence_loss(Vs, len(sentence), W_final, W_forget, W_input, W_cell, W_output, Gs)
+        cgraph = theano.function(inputs=[Vs, W_final, W_forget, W_input, W_cell, W_output, Gs], on_unused_input='warn', outputs=result)
 
         print(np.array(sentence).shape)
-        res = cgraph(sentence, self.W_final, self.W_forward_forget, self.W_forward_input, self.W_forward_cell, self.W_forward_output)
+        res = cgraph(sentence, self.W_final, self.W_forget, self.W_input, self.W_cell, self.W_output, gold)
         print(res.shape)
 
         return res
@@ -147,7 +153,7 @@ class RNN():
 def fit(features, labels, model_path=None, save_every_iteration=False):
 
     model = RNN()
-    print(model.single_predict(features[0]))
+    print(model.single_predict(features[0], labels[0]))
 
 def predict(sentence_list, model_path=None):
     predictions = []
