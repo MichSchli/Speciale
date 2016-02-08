@@ -137,13 +137,7 @@ class RNN():
 
         return padded_result
 
-    def __theano_batch_predict_inner(self, sentence_vectors, sentence_lengths):
-        results, _ = theano.scan(fn=self.__shitty_theano_predict_inner,
-                            outputs_info=None,
-                            sequences=[sentence_vectors, sentence_lengths],
-                            non_sequences=None)
-        return results
-
+    
     
     def __theano_batch_predict_inner(self, sentence_vectors, sentence_lengths):
         results, _ = theano.scan(fn=self.__shitty_theano_predict_inner,

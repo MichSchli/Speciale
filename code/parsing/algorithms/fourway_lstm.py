@@ -26,6 +26,31 @@ class RNN():
         self.W_output = np.random.rand(n_lstm_layers, self.hidden_dimension, self.input_dimension*2 + self.hidden_dimension + 1)
 
 
+    def __pad_sentences(self, sentence_list):
+        longest_sentence = max([len(x) for x  in sentence_list])
+
+        self.max_words = longest_sentence
+        
+        new_sentences = np.zeros((len(sentence_list), longest_sentence, len(sentence_list[0][0])))
+
+        for i, sentence in enumerate(sentence_list):
+            new_sentences[i, :len(sentence), :] = sentence
+
+        return new_sentences
+
+    def __pad_golds(self, sentence_labels):
+        longest_sentence = max([len(x) for x  in sentence_labels])
+
+        new_labels = np.zeros((len(sentence_labels), longest_sentence, longest_sentence+1))
+
+        for i, sentence in enumerate(sentence_labels):
+            for j,label in enumerate(sentence):
+                new_labels[i,j,:label.shape[0]] = label
+
+        return np.array(new_labels)
+
+    
+        
     '''
     Theano functions:
     '''
@@ -79,16 +104,50 @@ class RNN():
         output_with_bias = T.concatenate((H, [1]))
         return T.dot(W_o, output_with_bias)
 
-    def __theano_sentence_loss(self, Vs, sentence_length, W_final,
-                                     W_forget, W_input, W_cell, W_output, gold):
+    def __theano_predict_with_pad(self, Vs, sentence_length, W_final,
+                                     W_forget, W_input, W_cell, W_output):
         preds = self.__theano_sentence_prediction(Vs, sentence_length, W_final, W_forget, W_input, W_cell, W_output)
 
+        pad1 = T.zeros((sentence_length, self.max_words - sentence_length))
+        pad2 = T.zeros((self.max_words - sentence_length, self.max_words + 1))
+
+        padded_result = T.concatenate((preds, pad1), axis=1)
+        padded_result = T.concatenate((padded_result, pad2), axis=0)        
+
+        return padded_result
+
+        
+    def __theano_sentence_loss(self, Vs, sentence_length, gold, W_final,
+                                     W_forget, W_input, W_cell, W_output):
+        preds = self.__theano_sentence_prediction(Vs, sentence_length, W_final, W_forget, W_input, W_cell, W_output)
+
+        gold = gold[:sentence_length, :sentence_length+1]
         losses = T.nnet.categorical_crossentropy(preds, gold)
 
         return T.sum(losses)
+
+
+    def __theano_batch_loss(self, Vs, sentence_lengths,W_final, W_forget, W_input, W_cell, W_output, Gs):
+        losses, __ = theano.scan(fn=self.__theano_sentence_loss,
+                                outputs_info=None,
+                                sequences=[Vs,sentence_lengths, Gs],
+                                non_sequences=[W_final, W_forget, W_input, W_cell, W_output])
+
+        return T.sum(losses)
+
+    
+    def __theano_batch_prediction(self, Vs, sentence_lengths,W_final, W_forget, W_input, W_cell, W_output):
+        preds, __ = theano.scan(fn=self.__theano_predict_with_pad,
+                                outputs_info=None,
+                                sequences=[Vs,sentence_lengths],
+                                non_sequences=[W_final, W_forget, W_input, W_cell, W_output])
+
+        return preds
     
     def __theano_sentence_prediction(self, Vs, sentence_length, W_final,
                                      W_forget, W_input, W_cell, W_output):
+
+        Vs = Vs[:sentence_length]
 
         #Make pairwise features:
         pairwise_vs, _ = theano.scan(fn=self.__pairwise_features,
@@ -128,24 +187,30 @@ class RNN():
                                  non_sequences=W_final)
         matrix_outputs = T.reshape(outputs, newshape=(sentence_length,sentence_length+1))
 
-        
         return T.nnet.softmax(matrix_outputs)
-        
+    
     #For testing:
-    def single_predict(self, sentence, gold):
-        Vs = T.dmatrix('Vs')
+    def single_predict(self, sentences, golds):
+
+        #Pad the sentences to allow use of tensor rather than list in theano:
+        lengths = [len(s) for s in sentences]
+        sentences = self.__pad_sentences(sentences)
+        golds = self.__pad_golds(golds)
+        
+        Vs = T.dtensor3('Vs')
+        Ls = T.ivector('Ls')
         W_forget = T.dtensor3('W_forget')
         W_input = T.dtensor3('W_input')
         W_cell = T.dtensor3('W_cell')
         W_output = T.dtensor3('W_output')
-        W_final = T.vector('W_final')
-        Gs = T.dmatrix('Gs')
+        W_final = T.dvector('W_final')
+        Gs = T.tensor3('Gs')
         
-        result = self.__theano_sentence_loss(Vs, len(sentence), W_final, W_forget, W_input, W_cell, W_output, Gs)
-        cgraph = theano.function(inputs=[Vs, W_final, W_forget, W_input, W_cell, W_output, Gs], on_unused_input='warn', outputs=result)
+        result = self.__theano_batch_loss(Vs, Ls, W_final, W_forget, W_input, W_cell, W_output, Gs)
+        cgraph = theano.function(inputs=[Vs, Ls, Gs, W_final, W_forget, W_input, W_cell, W_output], on_unused_input='warn', outputs=result)
 
-        print(np.array(sentence).shape)
-        res = cgraph(sentence, self.W_final, self.W_forget, self.W_input, self.W_cell, self.W_output, gold)
+        print(np.array(sentences).shape)
+        res = cgraph(sentences, lengths, golds, self.W_final, self.W_forget, self.W_input, self.W_cell, self.W_output)
         print(res.shape)
 
         return res
@@ -153,7 +218,7 @@ class RNN():
 def fit(features, labels, model_path=None, save_every_iteration=False):
 
     model = RNN()
-    print(model.single_predict(features[0], labels[0]))
+    print(model.single_predict(features[:3], labels[:3]))
 
 def predict(sentence_list, model_path=None):
     predictions = []
