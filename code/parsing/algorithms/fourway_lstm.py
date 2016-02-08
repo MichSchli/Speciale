@@ -11,6 +11,9 @@ class RNN():
     hidden_dimension = 2
     input_dimension = 50
 
+    learning_rate = 0.01
+    momentum = 0.1
+    
     '''
     Class methods:
     '''
@@ -136,7 +139,7 @@ class RNN():
         return T.sum(losses)
 
     
-    def __theano_batch_prediction(self, Vs, sentence_lengths,W_final, W_forget, W_input, W_cell, W_output):
+    def __theano_batch_prediction(self, Vs, sentence_lengths, W_final, W_forget, W_input, W_cell, W_output):
         preds, __ = theano.scan(fn=self.__theano_predict_with_pad,
                                 outputs_info=None,
                                 sequences=[Vs,sentence_lengths],
@@ -188,6 +191,35 @@ class RNN():
         matrix_outputs = T.reshape(outputs, newshape=(sentence_length,sentence_length+1))
 
         return T.nnet.softmax(matrix_outputs)
+
+
+    def __theano_sgd(self, Vs, Ls, Gs,
+                     W_final, W_forget,
+                     W_input, W_cell, W_output,
+                     W_final_prevupd, W_forget_prevupd,
+                     W_input_prevupd, W_cell_prevupd,
+                     W_output_prevupd):
+
+        loss = self.__theano_batch_loss(Vs, Ls, W_final, W_forget, W_input, W_cell, W_output, Gs)
+
+        grads = T.grad(loss, [W_final, W_forget, W_input, W_cell, W_output])
+
+
+        newUpdFin = grads[0]*self.learning_rate + W_final_prevupd*self.momentum
+        newUpdFor = grads[1]*self.learning_rate + W_forget_prevupd*self.momentum
+        newUpdInp = grads[2]*self.learning_rate + W_input_prevupd*self.momentum
+        newUpdCel = grads[3]*self.learning_rate + W_cell_prevupd*self.momentum
+        newUpdOut = grads[4]*self.learning_rate + W_output_prevupd*self.momentum
+
+        newFin = W_final - newUpdFin
+        newFor = W_forget - newUpdFor
+        newInp = W_input - newUpdInp
+        newCel = W_cell - newUpdCel
+        newOut = W_output - newUpdOut
+
+        return newFin, newFor, newInp, newCel, newOut, newUpdFin, newUpdFor, newUpdInp, newUpdCel, newUpdOut
+        
+                       
     
     #For testing:
     def single_predict(self, sentences, golds):
@@ -206,7 +238,7 @@ class RNN():
         W_final = T.dvector('W_final')
         Gs = T.tensor3('Gs')
         
-        result = self.__theano_batch_loss(Vs, Ls, W_final, W_forget, W_input, W_cell, W_output, Gs)
+        result = self.__theano_sgd(Vs, Ls, Gs, W_final, W_forget, W_input, W_cell, W_output, W_final, W_forget, W_input, W_cell, W_output)
         cgraph = theano.function(inputs=[Vs, Ls, Gs, W_final, W_forget, W_input, W_cell, W_output], on_unused_input='warn', outputs=result)
 
         print(np.array(sentences).shape)
