@@ -1,6 +1,7 @@
 import numpy as np
 from theano import tensor as T
 import theano
+import pickle
 
 class RNN():
 
@@ -8,11 +9,14 @@ class RNN():
     Fields:
     '''
 
-    hidden_dimension = 2
+    hidden_dimension = 5
     input_dimension = 50
 
     learning_rate = 0.01
     momentum = 0.1
+    batch_size = 25
+
+    error_margin = 0.0001
     
     '''
     Class methods:
@@ -29,6 +33,10 @@ class RNN():
         self.W_output = np.random.rand(n_lstm_layers, self.hidden_dimension, self.input_dimension*2 + self.hidden_dimension + 1)
 
 
+    def __chunk(self, l):
+        return np.array(list(zip(*[iter(l)]*self.batch_size)))
+
+        
     def __pad_sentences(self, sentence_list):
         longest_sentence = max([len(x) for x  in sentence_list])
 
@@ -188,6 +196,7 @@ class RNN():
         outputs, _ = theano.scan(fn=self.__theano_out_node,
                                  sequences=flatter_lstm,
                                  non_sequences=W_final)
+        
         matrix_outputs = T.reshape(outputs, newshape=(sentence_length,sentence_length+1))
 
         return T.nnet.softmax(matrix_outputs)
@@ -219,7 +228,114 @@ class RNN():
 
         return newFin, newFor, newInp, newCel, newOut, newUpdFin, newUpdFor, newUpdInp, newUpdCel, newUpdOut
         
-                       
+    def train(self, sentences, labels):
+        lengths = np.array([len(s) for s in sentences])
+        lengths = lengths.astype(np.int32)
+
+        sentences = self.__pad_sentences(sentences)
+        labels = self.__pad_golds(labels)
+
+        length_chunks = self.__chunk(lengths)
+        sentence_chunks = self.__chunk(sentences)
+        label_chunks = self.__chunk(labels)
+
+        Vs = T.dtensor4('Vs')
+        Ls = T.imatrix('Ls')
+        Gs = T.tensor4('Gs')
+        W_forget = T.dtensor3('W_forget')
+        W_input = T.dtensor3('W_input')
+        W_cell = T.dtensor3('W_cell')
+        W_output = T.dtensor3('W_output')
+        W_final = T.dvector('W_final')
+
+        w_forget_upd = np.zeros_like(self.W_forget)
+        w_input_upd = np.zeros_like(self.W_input)
+        w_cell_upd = np.zeros_like(self.W_cell)
+        w_output_upd = np.zeros_like(self.W_output)
+        w_final_upd = np.zeros_like(self.W_final)
+
+        current_loss = self.__batch_loss(sentences, lengths, labels)
+        prev_loss = current_loss +1
+
+        iteration_counter = 1
+ 
+        while(prev_loss - current_loss > self.error_margin and iteration_counter < 11):
+            prev_loss = current_loss
+            print("Running gradient descent at iteration "+str(iteration_counter)+". Current loss: "+str(prev_loss))
+            iteration_counter += 1
+
+            results, _ =  theano.scan(fn=self.__theano_sgd,
+                                  outputs_info=[W_final, W_forget, W_input, W_cell, W_output,
+                                                w_final_upd, w_forget_upd, w_input_upd, w_cell_upd, w_output_upd],
+                                  sequences=[Vs, Ls, Gs],
+                                  non_sequences=None)
+
+            finalW_final = results[0][-1]
+            finalW_forget = results[1][-1]
+            finalW_input = results[2][-1]
+            finalW_cell = results[3][-1]
+            finalW_output = results[4][-1]
+
+            cgraph = theano.function(inputs=[Vs, Ls, Gs, W_final, W_forget, W_input, W_cell, W_output],
+                                     outputs=[finalW_final, finalW_forget, finalW_input, finalW_cell, finalW_output])
+
+            newW_fin, newW_for, newW_inp, newW_cel, newW_out = cgraph(sentence_chunks, length_chunks, label_chunks, self.W_final,
+                                                                    self.W_forget, self.W_input, self.W_cell, self.W_output)
+
+            self.W_final = newW_fin
+            self.W_forget = newW_for
+            self.W_input = newW_inp
+            self.W_cell = newW_cel
+            self.W_output = newW_out
+
+            current_loss = self.__batch_loss(sentences, lengths, labels)
+            self.save(self.save_path)
+
+    def __batch_loss(self, sentences, lengths, golds):
+       
+        Vs = T.dtensor3('Vs')
+        Ls = T.ivector('Ls')
+        W_forget = T.dtensor3('W_forget')
+        W_input = T.dtensor3('W_input')
+        W_cell = T.dtensor3('W_cell')
+        W_output = T.dtensor3('W_output')
+        W_final = T.dvector('W_final')
+        Gs = T.tensor3('Gs')
+        
+        result = self.__theano_batch_loss(Vs, Ls, W_final, W_forget, W_input, W_cell, W_output, Gs)
+        cgraph = theano.function(inputs=[Vs, Ls, Gs, W_final, W_forget, W_input, W_cell, W_output], on_unused_input='warn', outputs=result)
+
+        print(np.array(sentences).shape)
+        res = cgraph(sentences, lengths, golds, self.W_final, self.W_forget, self.W_input, self.W_cell, self.W_output)
+        print(res.shape)
+
+        return res
+
+    def batch_predict(self, sentences):
+        lengths = np.array([len(s) for s in sentences])
+        lengths = lengths.astype(np.int32)
+
+        sentences = self.__pad_sentences(sentences)
+
+        Vs = T.dtensor3('Vs')
+        Ls = T.ivector('Ls')
+        W_forget = T.dtensor3('W_forget')
+        W_input = T.dtensor3('W_input')
+        W_cell = T.dtensor3('W_cell')
+        W_output = T.dtensor3('W_output')
+        W_final = T.dvector('W_final')
+        
+        result = self.__theano_batch_prediction(Vs, Ls, W_final, W_forget, W_input, W_cell, W_output)
+        cgraph = theano.function(inputs=[Vs, Ls, W_final, W_forget, W_input, W_cell, W_output], on_unused_input='warn', outputs=result)
+
+        res = cgraph(sentences, lengths, self.W_final, self.W_forget, self.W_input, self.W_cell, self.W_output)
+
+        out_sentences = []
+        for sentence, length in zip(res, lengths):
+            out_sentences.append(sentence[:length, :length+1])
+
+        return out_sentences
+
     
     #For testing:
     def single_predict(self, sentences, golds):
@@ -246,17 +362,39 @@ class RNN():
         print(res.shape)
 
         return res
+
+
+    def save(self, filename):
+        store_list = [self.W_final, self.W_forget, self.W_input, self.W_cell, self.W_output]
+        
+        outfile1 = open(filename, 'wb')
+        pickle.dump(store_list, outfile1)
+        outfile1.close()
+        
+
+        
+    def load(self, filename):
+        infile = open(filename, 'rb')
+        store_list = pickle.load(infile)
+        infile.close()
+
+        self.W_final = store_list[0]
+        self.W_forget = store_list[1]
+        self.W_input = store_list[2]
+        self.W_cell = store_list[3]
+        self.W_output = store_list[4]
+
     
-def fit(features, labels, model_path=None, save_every_iteration=False):
+def fit(features, labels, model_path=None):
 
     model = RNN()
-    print(model.single_predict(features[:3], labels[:3]))
+    model.save_path = model_path
+    model.train(features, labels)
+    
+def predict(features, model_path=None):
+    model = RNN()
+    model.load(model_path)
 
-def predict(sentence_list, model_path=None):
-    predictions = []
-    for sentence in sentence_list:
-        predictions.append([])
-        for token_feature in sentence:
-            predictions[-1].append(np.random.uniform(0.0, 1.0, len(sentence)+1))
-
+    predictions = model.batch_predict(features)
+    
     return predictions

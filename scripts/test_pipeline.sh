@@ -29,7 +29,8 @@ python code/parsing/predict.py --features $FEATURE_FILE --sentences $GRAPH_FILE 
 #Decode:
 python code/decoding/decode.py --infile $OUTPUT_FILE --outfile $TEST_FILE --verbose
 
-echo "\nLAS:"
+echo ""
+echo "LAS:"
 
 #Evaluate
 python code/evaluation/score.py --gold $INPUT_FILE --prediction $TEST_FILE

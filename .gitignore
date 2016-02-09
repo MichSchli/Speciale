@@ -13,6 +13,9 @@ __pycache__/
 data/
 misc/
 
+# Models:
+*.model
+
 # Distribution / packaging
 .Python
 env/

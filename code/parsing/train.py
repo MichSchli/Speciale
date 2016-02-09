@@ -16,4 +16,4 @@ features = io.read_features(args.features)
 sentences = io.read_conll_sentences(args.sentences)
 labels = [[token['dependency_graph'] for token in sentence] for sentence in sentences]
 
-algorithm.fit(features, labels, model_path=args.model_path, save_every_iteration=True)
+algorithm.fit(features, labels, model_path=args.model_path)
