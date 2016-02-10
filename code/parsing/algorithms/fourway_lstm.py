@@ -5,20 +5,21 @@ import pickle
 import imp
 
 superclass = imp.load_source('abstract_rnn', 'code/parsing/algorithms/abstract_rnn.py')
+
 class FourwayLstm(superclass.RNN):
 
     '''
     Fields:
     '''
 
-    hidden_dimension = 5
+    hidden_dimension = 20
     input_dimension = 100
 
-    learning_rate = 0.01
+    learning_rate = 0.005
     momentum = 0.1
-    batch_size = 25
+    batch_size = 50
 
-    error_margin = 0.0001
+    error_margin = 0.000001
     
     '''
     Class methods:
@@ -35,37 +36,6 @@ class FourwayLstm(superclass.RNN):
         self.W_input = np.random.rand(n_lstm_layers, self.hidden_dimension, self.input_dimension*2 + self.hidden_dimension + 1)
         self.W_cell = np.random.rand(n_lstm_layers, self.hidden_dimension, self.input_dimension*2 + self.hidden_dimension + 1)
         self.W_output = np.random.rand(n_lstm_layers, self.hidden_dimension, self.input_dimension*2 + self.hidden_dimension + 1)
-        
-        print('init_m')
-
-
-    def __chunk(self, l):
-        return np.array(list(zip(*[iter(l)]*self.batch_size)))
-
-        
-    def __pad_sentences(self, sentence_list):
-        longest_sentence = max([len(x) for x  in sentence_list])
-
-        self.max_words = longest_sentence
-        
-        new_sentences = np.zeros((len(sentence_list), longest_sentence, len(sentence_list[0][0])))
-
-        for i, sentence in enumerate(sentence_list):
-            new_sentences[i, :len(sentence), :] = sentence
-
-        return new_sentences
-
-    def __pad_golds(self, sentence_labels):
-        longest_sentence = max([len(x) for x  in sentence_labels])
-
-        new_labels = np.zeros((len(sentence_labels), longest_sentence, longest_sentence+1))
-
-        for i, sentence in enumerate(sentence_labels):
-            for j,label in enumerate(sentence):
-                new_labels[i,j,:label.shape[0]] = label
-
-        return np.array(new_labels)
-
     
         
     '''
@@ -195,7 +165,10 @@ class FourwayLstm(superclass.RNN):
                                                  sequences=transpose_vs,
                                                  non_sequences=[W_forget[3], W_input[3], W_cell[3], W_output[3], 0])
 
-        full_lstm = T.concatenate((lstm_sidewards_forwards, lstm_sidewards_forwards, lstm_downwards_forwards.transpose(1,0,2), lstm_downwards_backwards.transpose(1,0,2)), axis=2)
+        full_lstm = T.concatenate((lstm_sidewards_forwards,
+                                   lstm_sidewards_backwards,
+                                   lstm_downwards_forwards.transpose(1,0,2),
+                                   lstm_downwards_backwards.transpose(1,0,2)), axis=2)
 
         flatter_lstm = T.reshape(full_lstm, newshape=(sentence_length*(sentence_length+1), self.hidden_dimension*4))
 
@@ -208,7 +181,7 @@ class FourwayLstm(superclass.RNN):
         return T.nnet.softmax(matrix_outputs)
 
 
-    def __theano_sgd(self, Vs, Ls, Gs,
+    def theano_sgd(self, Vs, Ls, Gs,
                      W_final, W_forget,
                      W_input, W_cell, W_output,
                      W_final_prevupd, W_forget_prevupd,
@@ -218,7 +191,6 @@ class FourwayLstm(superclass.RNN):
         loss = self.__theano_batch_loss(Vs, Ls, W_final, W_forget, W_input, W_cell, W_output, Gs)
 
         grads = T.grad(loss, [W_final, W_forget, W_input, W_cell, W_output])
-
 
         newUpdFin = grads[0]*self.learning_rate + W_final_prevupd*self.momentum
         newUpdFor = grads[1]*self.learning_rate + W_forget_prevupd*self.momentum
@@ -233,71 +205,38 @@ class FourwayLstm(superclass.RNN):
         newOut = W_output - newUpdOut
 
         return newFin, newFor, newInp, newCel, newOut, newUpdFin, newUpdFor, newUpdInp, newUpdCel, newUpdOut
-        
-    def train(self, sentences, labels):
-        lengths = np.array([len(s) for s in sentences])
-        lengths = lengths.astype(np.int32)
 
-        sentences = self.__pad_sentences(sentences)
-        labels = self.__pad_golds(labels)
-
-        length_chunks = self.__chunk(lengths)
-        sentence_chunks = self.__chunk(sentences)
-        label_chunks = self.__chunk(labels)
-
-        Vs = T.dtensor4('Vs')
-        Ls = T.imatrix('Ls')
-        Gs = T.tensor4('Gs')
+    def get_weight_list(self):
+        return self.W_final, self.W_forget, self.W_input, self.W_cell, self.W_output
+    
+    def get_theano_weight_list(self):
+        W_final = T.dvector('W_final')
         W_forget = T.dtensor3('W_forget')
         W_input = T.dtensor3('W_input')
         W_cell = T.dtensor3('W_cell')
         W_output = T.dtensor3('W_output')
-        W_final = T.dvector('W_final')
 
+        return W_final, W_forget, W_input, W_cell, W_output
+
+    def get_initial_weight_updates(self):
         w_forget_upd = np.zeros_like(self.W_forget)
         w_input_upd = np.zeros_like(self.W_input)
         w_cell_upd = np.zeros_like(self.W_cell)
         w_output_upd = np.zeros_like(self.W_output)
         w_final_upd = np.zeros_like(self.W_final)
 
-        current_loss = self.__batch_loss(sentences, lengths, labels)
-        prev_loss = current_loss +1
+        return w_final_upd, w_forget_upd, w_input_upd, w_cell_upd, w_output_upd
 
-        iteration_counter = 1
- 
-        while(prev_loss - current_loss > self.error_margin and iteration_counter < 11):
-            prev_loss = current_loss
-            print("Running gradient descent at iteration "+str(iteration_counter)+". Current loss: "+str(prev_loss))
-            iteration_counter += 1
+    def update_weights(self, update_list):
+        self.W_final = update_list[0]
+        self.W_forget = update_list[1]
+        self.W_input = update_list[2]
+        self.W_cell = update_list[3]
+        self.W_output = update_list[4]
 
-            results, _ =  theano.scan(fn=self.__theano_sgd,
-                                  outputs_info=[W_final, W_forget, W_input, W_cell, W_output,
-                                                w_final_upd, w_forget_upd, w_input_upd, w_cell_upd, w_output_upd],
-                                  sequences=[Vs, Ls, Gs],
-                                  non_sequences=None)
+    
 
-            finalW_final = results[0][-1]
-            finalW_forget = results[1][-1]
-            finalW_input = results[2][-1]
-            finalW_cell = results[3][-1]
-            finalW_output = results[4][-1]
-
-            cgraph = theano.function(inputs=[Vs, Ls, Gs, W_final, W_forget, W_input, W_cell, W_output],
-                                     outputs=[finalW_final, finalW_forget, finalW_input, finalW_cell, finalW_output])
-
-            newW_fin, newW_for, newW_inp, newW_cel, newW_out = cgraph(sentence_chunks, length_chunks, label_chunks, self.W_final,
-                                                                    self.W_forget, self.W_input, self.W_cell, self.W_output)
-
-            self.W_final = newW_fin
-            self.W_forget = newW_for
-            self.W_input = newW_inp
-            self.W_cell = newW_cel
-            self.W_output = newW_out
-
-            current_loss = self.__batch_loss(sentences, lengths, labels)
-            self.save(self.save_path)
-
-    def __batch_loss(self, sentences, lengths, golds):
+    def batch_loss(self, sentences, lengths, golds):
        
         Vs = T.dtensor3('Vs')
         Ls = T.ivector('Ls')
@@ -321,7 +260,7 @@ class FourwayLstm(superclass.RNN):
         lengths = np.array([len(s) for s in sentences])
         lengths = lengths.astype(np.int32)
 
-        sentences = self.__pad_sentences(sentences)
+        sentences = self.pad_sentences(sentences)
 
         Vs = T.dtensor3('Vs')
         Ls = T.ivector('Ls')
