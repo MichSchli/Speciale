@@ -5,6 +5,7 @@ import pickle
 import imp
 
 superclass = imp.load_source('abstract_rnn', 'code/parsing/algorithms/abstract_rnn.py')
+network_ops = imp.load_source('network_ops', 'code/parsing/algorithms/network_ops.py')
 
 class FourwayLstm(superclass.RNN):
 
@@ -12,12 +13,12 @@ class FourwayLstm(superclass.RNN):
     Fields:
     '''
 
-    hidden_dimension = 20
+    hidden_dimension = 2
     input_dimension = 100
 
     learning_rate = 0.005
     momentum = 0.1
-    batch_size = 50
+    batch_size = 5
 
     error_margin = 0.000001
     
@@ -36,44 +37,14 @@ class FourwayLstm(superclass.RNN):
         self.W_input = np.random.rand(n_lstm_layers, self.hidden_dimension, self.input_dimension*2 + self.hidden_dimension + 1)
         self.W_cell = np.random.rand(n_lstm_layers, self.hidden_dimension, self.input_dimension*2 + self.hidden_dimension + 1)
         self.W_output = np.random.rand(n_lstm_layers, self.hidden_dimension, self.input_dimension*2 + self.hidden_dimension + 1)
+        
     
         
     '''
     Theano functions:
+
     '''
-
-    # Prediction method for a single LSTM block:
-    def __theano_lstm(self, x, h_prev, c_prev, W_forget, W_input, W_cell, W_output):
-
-        input_vector = T.concatenate((x, h_prev))
-
-        forget_gate = T.nnet.sigmoid(T.dot(W_forget, input_vector))
-        input_gate = T.nnet.sigmoid(T.dot(W_input, input_vector))
-        candidate_vector = T.tanh(T.dot(W_cell, input_vector))
-        cell_state = forget_gate*c_prev + input_gate * candidate_vector
-
-        output = T.nnet.sigmoid(T.dot(W_output, input_vector))
-        h = output * T.tanh(cell_state)
-        return h, cell_state
-
-
-    # Prediction method for a layer of LSTM blocks:
-    def __theano_lstm_layer(self, Vs, W_forget, W_input, W_cell, W_output, forwards=True):
-        h0 = np.zeros(self.hidden_dimension)
-        c0 = np.zeros(self.hidden_dimension)
-
-        lstm_preds, _ = theano.scan(fn=self.__theano_lstm,
-                            outputs_info=[h0,c0],
-                            sequences=Vs,
-                            non_sequences=[W_forget,
-                                           W_input,
-                                           W_cell,
-                                           W_output],
-                            go_backwards=not forwards)
-
-        # Discard the cell values:
-        return lstm_preds[0]
-
+        
     def __pairwise_features(self, V, Vs, sentence_length):
         thingy, _ = theano.scan(fn=lambda x, y: T.concatenate([y,x,[1]]),
                                 sequences=Vs,
@@ -87,10 +58,7 @@ class FourwayLstm(superclass.RNN):
         in_shape = T.reshape(with_root, newshape=(sentence_length+1,self.input_dimension*2+1))
         return in_shape
 
-    def __theano_out_node(self, H, W_o):
-        output_with_bias = T.concatenate((H, [1]))
-        return T.dot(W_o, output_with_bias)
-
+    
     def __theano_predict_with_pad(self, Vs, sentence_length, W_final,
                                      W_forget, W_input, W_cell, W_output):
         preds = self.__theano_sentence_prediction(Vs, sentence_length, W_final, W_forget, W_input, W_cell, W_output)
@@ -142,37 +110,25 @@ class FourwayLstm(superclass.RNN):
                                   sequences=Vs,
                                   non_sequences=[Vs, sentence_length])
 
-        
-        lstm_sidewards_forwards, _ = theano.scan(fn=self.__theano_lstm_layer,
-                                                 outputs_info=None,
-                                                 sequences=pairwise_vs,
-                                                 non_sequences=[W_forget[0], W_input[0], W_cell[0], W_output[0], 1])
 
-        lstm_sidewards_backwards, _ = theano.scan(fn=self.__theano_lstm_layer,
+
+        lstm_sidewards, _ = theano.scan(fn=lambda a,b,c,d,e: network_ops.bidirectional_lstm_layer(a,b,c,d,e, hidden_dimension_size=self.hidden_dimension),
                                                  outputs_info=None,
                                                  sequences=pairwise_vs,
-                                                 non_sequences=[W_forget[1], W_input[1], W_cell[1], W_output[1], 0])
+                                                 non_sequences=[W_forget[:2], W_input[:2], W_cell[:2], W_output[:2]])
 
         transpose_vs = pairwise_vs.transpose(1,0,2)
 
-        lstm_downwards_forwards, _ = theano.scan(fn=self.__theano_lstm_layer,
+        lstm_downwards, _ = theano.scan(fn=lambda a,b,c,d,e: network_ops.bidirectional_lstm_layer(a,b,c,d,e, hidden_dimension_size=self.hidden_dimension),
                                                  outputs_info=None,
                                                  sequences=transpose_vs,
-                                                 non_sequences=[W_forget[2], W_input[2], W_cell[2], W_output[2], 1])
+                                                 non_sequences=[W_forget[2:], W_input[2:], W_cell[2:], W_output[2:]])
 
-        lstm_downwards_backwards, _ = theano.scan(fn=self.__theano_lstm_layer,
-                                                 outputs_info=None,
-                                                 sequences=transpose_vs,
-                                                 non_sequences=[W_forget[3], W_input[3], W_cell[3], W_output[3], 0])
-
-        full_lstm = T.concatenate((lstm_sidewards_forwards,
-                                   lstm_sidewards_backwards,
-                                   lstm_downwards_forwards.transpose(1,0,2),
-                                   lstm_downwards_backwards.transpose(1,0,2)), axis=2)
+        full_lstm = T.concatenate((lstm_sidewards,lstm_downwards.transpose(1,0,2)), axis=2)
 
         flatter_lstm = T.reshape(full_lstm, newshape=(sentence_length*(sentence_length+1), self.hidden_dimension*4))
 
-        outputs, _ = theano.scan(fn=self.__theano_out_node,
+        outputs, _ = theano.scan(fn=network_ops.linear_layer,
                                  sequences=flatter_lstm,
                                  non_sequences=W_final)
         
@@ -334,7 +290,7 @@ def fit(features, labels, model_path=None):
 
     model = FourwayLstm()
     model.save_path = model_path
-    model.train(features, labels)
+    model.train(features[:10], labels[:10])
     
 def predict(features, model_path=None):
     model = FourwayLstm()

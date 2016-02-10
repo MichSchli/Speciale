@@ -3,10 +3,12 @@ from theano import tensor as T
 import theano
 
 class RNN():
+
+    sgd_graph = None
     
     def __init__(self):
         pass
-
+    
     '''
     Chunking and padding:
     '''
@@ -42,32 +44,18 @@ class RNN():
     SGD:
     '''
 
-    def train(self, sentences, labels):
-        lengths = np.array([len(s) for s in sentences])
-        lengths = lengths.astype(np.int32)
 
-        sentences = self.pad_sentences(sentences)
-        labels = self.pad_golds(labels)
-
-        length_chunks = self.chunk(lengths)
-        sentence_chunks = self.chunk(sentences)
-        label_chunks = self.chunk(labels)
-
+    def build_sgd_graph(self):
+        print("Building graph...")
+        
         Vs = T.dtensor4('Vs')
         Ls = T.imatrix('Ls')
         Gs = T.tensor4('Gs')
 
         theano_weight_list = self.get_theano_weight_list()
         initial_weight_updates = self.get_initial_weight_updates()
-        
-        current_loss = self.batch_loss(sentences, lengths, labels)
-        prev_loss = current_loss +1
-
-        iteration_counter = 1
-
         function_output_init = theano_weight_list + initial_weight_updates
 
-        print("Building graph...")
         results, _ =  theano.scan(fn=self.theano_sgd,
                                   outputs_info=function_output_init,
                                   sequences=[Vs, Ls, Gs],
@@ -78,15 +66,38 @@ class RNN():
         input_list = [Vs, Ls, Gs] + list(theano_weight_list)
         cgraph = theano.function(inputs=input_list, outputs=final_output_list)
 
-        print("Done building graph.")
+        print("Done building graph")
+        
+        return cgraph
+    
+    def train(self, sentences, labels):
+        if self.sgd_graph is None:
+            self.sgd_graph = self.build_sgd_graph()
+
+                    
+        lengths = np.array([len(s) for s in sentences])
+        lengths = lengths.astype(np.int32)
+
+        sentences = self.pad_sentences(sentences)
+        labels = self.pad_golds(labels)
+
+        length_chunks = self.chunk(lengths)
+        sentence_chunks = self.chunk(sentences)
+        label_chunks = self.chunk(labels)
+
+        current_loss = self.batch_loss(sentences, lengths, labels)
+        prev_loss = current_loss +1
+
+        iteration_counter = 1
         
         while(prev_loss - current_loss > self.error_margin and iteration_counter < 11):
+
             prev_loss = current_loss
             print("Running gradient descent at iteration "+str(iteration_counter)+". Current loss: "+str(prev_loss))
             iteration_counter += 1
             
             weight_list = self.get_weight_list()
-            out_list = cgraph(sentence_chunks, length_chunks, label_chunks, *weight_list)
+            out_list = self.sgd_graph(sentence_chunks, length_chunks, label_chunks, *weight_list)
 
             self.update_weights(out_list)
             
