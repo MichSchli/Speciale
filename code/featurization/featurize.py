@@ -26,7 +26,7 @@ def __featurize_token(token):
     pos = [0]*len(definitions.stanford_pos)
     pos[pos_dict[token['stanford_pos']]] = 1
     
-    feature = np.concatenate((feature, pos))
+    #feature = np.concatenate((feature, pos))
     return feature
 
 for sentence in sentences:

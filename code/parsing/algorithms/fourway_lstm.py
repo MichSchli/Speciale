@@ -13,12 +13,12 @@ class FourwayLstm(superclass.RNN):
     Fields:
     '''
 
-    hidden_dimension = 2
-    input_dimension = 100
+    hidden_dimension = 20
+    input_dimension = 50
 
     learning_rate = 0.005
     momentum = 0.1
-    batch_size = 5
+    batch_size = 50
 
     error_margin = 0.000001
     
@@ -103,28 +103,15 @@ class FourwayLstm(superclass.RNN):
                                      W_forget, W_input, W_cell, W_output):
 
         Vs = Vs[:sentence_length]
+        layer = network_ops.fourdirectional_lstm_layer(self.hidden_dimension)
 
-        #Make pairwise features:
+        #Make pairwise features. This is really just "tensor product with concatenation instead of multiplication". Is there a command for that?
         pairwise_vs, _ = theano.scan(fn=self.__pairwise_features,
                                   outputs_info=None,
                                   sequences=Vs,
                                   non_sequences=[Vs, sentence_length])
-
-
-
-        lstm_sidewards, _ = theano.scan(fn=lambda a,b,c,d,e: network_ops.bidirectional_lstm_layer(a,b,c,d,e, hidden_dimension_size=self.hidden_dimension),
-                                                 outputs_info=None,
-                                                 sequences=pairwise_vs,
-                                                 non_sequences=[W_forget[:2], W_input[:2], W_cell[:2], W_output[:2]])
-
-        transpose_vs = pairwise_vs.transpose(1,0,2)
-
-        lstm_downwards, _ = theano.scan(fn=lambda a,b,c,d,e: network_ops.bidirectional_lstm_layer(a,b,c,d,e, hidden_dimension_size=self.hidden_dimension),
-                                                 outputs_info=None,
-                                                 sequences=transpose_vs,
-                                                 non_sequences=[W_forget[2:], W_input[2:], W_cell[2:], W_output[2:]])
-
-        full_lstm = T.concatenate((lstm_sidewards,lstm_downwards.transpose(1,0,2)), axis=2)
+        
+        full_lstm = layer.function(pairwise_vs, W_forget, W_input, W_cell, W_output)
 
         flatter_lstm = T.reshape(full_lstm, newshape=(sentence_length*(sentence_length+1), self.hidden_dimension*4))
 
@@ -188,12 +175,10 @@ class FourwayLstm(superclass.RNN):
         self.W_forget = update_list[1]
         self.W_input = update_list[2]
         self.W_cell = update_list[3]
-        self.W_output = update_list[4]
+        self.W_output = update_list[4]    
 
-    
-
-    def batch_loss(self, sentences, lengths, golds):
-       
+    def build_loss_graph(self):
+        print("Building loss graph...")
         Vs = T.dtensor3('Vs')
         Ls = T.ivector('Ls')
         W_forget = T.dtensor3('W_forget')
@@ -204,20 +189,19 @@ class FourwayLstm(superclass.RNN):
         Gs = T.tensor3('Gs')
         
         result = self.__theano_batch_loss(Vs, Ls, W_final, W_forget, W_input, W_cell, W_output, Gs)
-        cgraph = theano.function(inputs=[Vs, Ls, Gs, W_final, W_forget, W_input, W_cell, W_output], on_unused_input='warn', outputs=result)
+        return theano.function(inputs=[Vs, Ls, Gs, W_final, W_forget, W_input, W_cell, W_output], on_unused_input='warn', outputs=result)
+        
+    def batch_loss(self, sentences, lengths, golds):
 
-        print(np.array(sentences).shape)
-        res = cgraph(sentences, lengths, golds, self.W_final, self.W_forget, self.W_input, self.W_cell, self.W_output)
-        print(res.shape)
+        if self.loss_graph is None:
+            self.loss_graph = self.build_loss_graph
+        
+        res = self.loss_graph(sentences, lengths, golds, self.W_final, self.W_forget, self.W_input, self.W_cell, self.W_output)
 
         return res
 
-    def batch_predict(self, sentences):
-        lengths = np.array([len(s) for s in sentences])
-        lengths = lengths.astype(np.int32)
-
-        sentences = self.pad_sentences(sentences)
-
+    def build_predict_graph(self):
+        print("Building prediction graph...")
         Vs = T.dtensor3('Vs')
         Ls = T.ivector('Ls')
         W_forget = T.dtensor3('W_forget')
@@ -227,9 +211,19 @@ class FourwayLstm(superclass.RNN):
         W_final = T.dvector('W_final')
         
         result = self.__theano_batch_prediction(Vs, Ls, W_final, W_forget, W_input, W_cell, W_output)
-        cgraph = theano.function(inputs=[Vs, Ls, W_final, W_forget, W_input, W_cell, W_output], on_unused_input='warn', outputs=result)
+        return theano.function(inputs=[Vs, Ls, W_final, W_forget, W_input, W_cell, W_output], on_unused_input='warn', outputs=result)
+    
+    
+    def batch_predict(self, sentences):
+        lengths = np.array([len(s) for s in sentences])
+        lengths = lengths.astype(np.int32)
 
-        res = cgraph(sentences, lengths, self.W_final, self.W_forget, self.W_input, self.W_cell, self.W_output)
+        sentences = self.pad_sentences(sentences)
+
+        if self.predict_graph is None:
+            self.predict_graph = self.build_predict_graph()
+
+        res = self.predict_graph(sentences, lengths, self.W_final, self.W_forget, self.W_input, self.W_cell, self.W_output)
 
         out_sentences = []
         for sentence, length in zip(res, lengths):
@@ -289,8 +283,9 @@ class FourwayLstm(superclass.RNN):
 def fit(features, labels, model_path=None):
 
     model = FourwayLstm()
+    model.load(model_path)
     model.save_path = model_path
-    model.train(features[:10], labels[:10])
+    model.train(features, labels)
     
 def predict(features, model_path=None):
     model = FourwayLstm()

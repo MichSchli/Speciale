@@ -5,6 +5,8 @@ import theano
 class RNN():
 
     sgd_graph = None
+    loss_graph = None
+    predict_graph = None
     
     def __init__(self):
         pass
@@ -90,7 +92,7 @@ class RNN():
 
         iteration_counter = 1
         
-        while(prev_loss - current_loss > self.error_margin and iteration_counter < 11):
+        while(prev_loss - current_loss > self.error_margin and iteration_counter < 100):
 
             prev_loss = current_loss
             print("Running gradient descent at iteration "+str(iteration_counter)+". Current loss: "+str(prev_loss))
