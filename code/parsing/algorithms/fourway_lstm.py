@@ -31,12 +31,12 @@ class FourwayLstm(superclass.RNN):
         
         self.W_final = np.random.rand(self.hidden_dimension*4+1)
 
-        n_lstm_layers = 4
+        n_lstm_layers = 3
         
-        self.W_forget = np.random.rand(n_lstm_layers, self.hidden_dimension, self.input_dimension*2 + self.hidden_dimension + 1)
-        self.W_input = np.random.rand(n_lstm_layers, self.hidden_dimension, self.input_dimension*2 + self.hidden_dimension + 1)
-        self.W_cell = np.random.rand(n_lstm_layers, self.hidden_dimension, self.input_dimension*2 + self.hidden_dimension + 1)
-        self.W_output = np.random.rand(n_lstm_layers, self.hidden_dimension, self.input_dimension*2 + self.hidden_dimension + 1)
+        self.W_forget = np.random.rand(4, self.hidden_dimension, self.input_dimension*2 + self.hidden_dimension + 1)
+        self.W_input = np.random.rand(4, self.hidden_dimension, self.input_dimension*2 + self.hidden_dimension + 1)
+        self.W_cell = np.random.rand(4, self.hidden_dimension, self.input_dimension*2 + self.hidden_dimension + 1)
+        self.W_output = np.random.rand(4, self.hidden_dimension, self.input_dimension*2 + self.hidden_dimension + 1)
         
     
         
@@ -46,12 +46,12 @@ class FourwayLstm(superclass.RNN):
     '''
         
     def __pairwise_features(self, V, Vs, sentence_length):
-        thingy, _ = theano.scan(fn=lambda x, y: T.concatenate([y,x,[1]]),
+        thingy, _ = theano.scan(fn=lambda x, y: T.concatenate([y,x]),
                                 sequences=Vs,
                                 non_sequences=V)
         
         #Make root feature and bias neuron:
-        root_features = T.concatenate((V,T.ones(self.input_dimension + 1)))
+        root_features = T.concatenate((V,T.ones(self.input_dimension)))
 
         flat_version = thingy.flatten()
         with_root = T.concatenate((root_features, flat_version))
@@ -82,7 +82,7 @@ class FourwayLstm(superclass.RNN):
         return T.sum(losses)
 
 
-    def __theano_batch_loss(self, Vs, sentence_lengths,W_final, W_forget, W_input, W_cell, W_output, Gs):
+    def __theano_batch_loss(self, Vs, sentence_lengths, Gs, W_final, W_forget, W_input, W_cell, W_output):
         losses, __ = theano.scan(fn=self.__theano_sentence_loss,
                                 outputs_info=None,
                                 sequences=[Vs,sentence_lengths, Gs],
@@ -131,7 +131,7 @@ class FourwayLstm(superclass.RNN):
                      W_input_prevupd, W_cell_prevupd,
                      W_output_prevupd):
 
-        loss = self.__theano_batch_loss(Vs, Ls, W_final, W_forget, W_input, W_cell, W_output, Gs)
+        loss = self.__theano_batch_loss(Vs, Ls, Gs, W_final, W_forget, W_input, W_cell, W_output)
 
         grads = T.grad(loss, [W_final, W_forget, W_input, W_cell, W_output])
 
@@ -181,15 +181,14 @@ class FourwayLstm(superclass.RNN):
         print("Building loss graph...")
         Vs = T.dtensor3('Vs')
         Ls = T.ivector('Ls')
-        W_forget = T.dtensor3('W_forget')
-        W_input = T.dtensor3('W_input')
-        W_cell = T.dtensor3('W_cell')
-        W_output = T.dtensor3('W_output')
-        W_final = T.dvector('W_final')
         Gs = T.tensor3('Gs')
         
-        result = self.__theano_batch_loss(Vs, Ls, W_final, W_forget, W_input, W_cell, W_output, Gs)
-        return theano.function(inputs=[Vs, Ls, Gs, W_final, W_forget, W_input, W_cell, W_output], on_unused_input='warn', outputs=result)
+        weight_list = self.get_theano_weight_list()
+         
+        result = self.__theano_batch_loss(Vs, Ls, Gs, *weight_list)
+
+        input_list = [Vs, Ls, Gs] + weight_list
+        return theano.function(inputs=input_list, on_unused_input='warn', outputs=result)
         
     def batch_loss(self, sentences, lengths, golds):
 
@@ -204,14 +203,11 @@ class FourwayLstm(superclass.RNN):
         print("Building prediction graph...")
         Vs = T.dtensor3('Vs')
         Ls = T.ivector('Ls')
-        W_forget = T.dtensor3('W_forget')
-        W_input = T.dtensor3('W_input')
-        W_cell = T.dtensor3('W_cell')
-        W_output = T.dtensor3('W_output')
-        W_final = T.dvector('W_final')
+        weight_list = self.get_theano_weight_list()
         
-        result = self.__theano_batch_prediction(Vs, Ls, W_final, W_forget, W_input, W_cell, W_output)
-        return theano.function(inputs=[Vs, Ls, W_final, W_forget, W_input, W_cell, W_output], on_unused_input='warn', outputs=result)
+        result = self.__theano_batch_prediction(Vs, Ls, *weight_list)
+        input_list = [Ls, Vs] + weight_list
+        return theano.function(inputs=input_list, on_unused_input='warn', outputs=result)
     
     
     def batch_predict(self, sentences):
@@ -231,41 +227,13 @@ class FourwayLstm(superclass.RNN):
 
         return out_sentences
 
-    
-    #For testing:
-    def single_predict(self, sentences, golds):
-
-        #Pad the sentences to allow use of tensor rather than list in theano:
-        lengths = [len(s) for s in sentences]
-        sentences = self.__pad_sentences(sentences)
-        golds = self.__pad_golds(golds)
-        
-        Vs = T.dtensor3('Vs')
-        Ls = T.ivector('Ls')
-        W_forget = T.dtensor3('W_forget')
-        W_input = T.dtensor3('W_input')
-        W_cell = T.dtensor3('W_cell')
-        W_output = T.dtensor3('W_output')
-        W_final = T.dvector('W_final')
-        Gs = T.tensor3('Gs')
-        
-        result = self.__theano_sgd(Vs, Ls, Gs, W_final, W_forget, W_input, W_cell, W_output, W_final, W_forget, W_input, W_cell, W_output)
-        cgraph = theano.function(inputs=[Vs, Ls, Gs, W_final, W_forget, W_input, W_cell, W_output], on_unused_input='warn', outputs=result)
-
-        print(np.array(sentences).shape)
-        res = cgraph(sentences, lengths, golds, self.W_final, self.W_forget, self.W_input, self.W_cell, self.W_output)
-        print(res.shape)
-
-        return res
-
 
     def save(self, filename):
-        store_list = [self.W_final, self.W_forget, self.W_input, self.W_cell, self.W_output]
+        store_list = self.get_weight_list()
         
         outfile1 = open(filename, 'wb')
         pickle.dump(store_list, outfile1)
         outfile1.close()
-        
 
         
     def load(self, filename):
@@ -283,7 +251,9 @@ class FourwayLstm(superclass.RNN):
 def fit(features, labels, model_path=None):
 
     model = FourwayLstm()
+
     model.load(model_path)
+
     model.save_path = model_path
     model.train(features, labels)
     

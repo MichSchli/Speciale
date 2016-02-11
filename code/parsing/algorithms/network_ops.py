@@ -15,23 +15,23 @@ def single_lstm(x, h_prev, c_prev, W_forget, W_input, W_cell, W_output):
     h = output * T.tanh(cell_state)
     return h, cell_state
 
-'''
-def lstm_layer(Vs, W_forget, W_input, W_cell, W_output, forwards=True, hidden_dimension_size=None):
-    h0 = np.zeros(hidden_dimension_size)
-    c0 = np.zeros(hidden_dimension_size)
+class single_lstm():
 
-    lstm_preds, _ = theano.scan(fn=single_lstm,
-                        outputs_info=[h0,c0],
-                        sequences=Vs,
-                        non_sequences=[W_forget,
-                                       W_input,
-                                       W_cell,
-                                       W_output],
-                        go_backwards=not forwards)
+    def __init__(self, hidden_neurons):
+        self.hidden_neurons=hidden_neurons
 
-    # Discard the cell values:
-    return lstm_preds[0]
-'''
+    def function(self, x, h_prev, c_prev, W_forget, W_input, W_cell, W_output):
+        input_vector = T.concatenate((x, h_prev, [1]))
+
+        forget_gate = T.nnet.sigmoid(T.dot(W_forget, input_vector))
+        input_gate = T.nnet.sigmoid(T.dot(W_input, input_vector))
+        candidate_vector = T.tanh(T.dot(W_cell, input_vector))
+        cell_state = forget_gate*c_prev + input_gate * candidate_vector
+
+        output = T.nnet.sigmoid(T.dot(W_output, input_vector))
+        h = output * T.tanh(cell_state)
+        return h, cell_state
+    
 
 class lstm_layer():
 
@@ -39,11 +39,13 @@ class lstm_layer():
         self.hidden_neurons=hidden_neurons
         self.direction=direction
 
+        self.neuron=single_lstm(hidden_neurons)
+
     def function(self, Vs, W_forget, W_input, W_cell, W_output):
         h0 = T.zeros(self.hidden_neurons)
         c0 = T.zeros(self.hidden_neurons)
 
-        lstm_preds, _ = theano.scan(fn=single_lstm,
+        lstm_preds, _ = theano.scan(fn=self.neuron.function,
                         outputs_info=[h0,c0],
                         sequences=Vs,
                         non_sequences=[W_forget,
@@ -125,31 +127,6 @@ class corner_lstm_layer():
 
         return T.concatenate((lstm_downwards, lstm_upwards), axis=2)
 
-
-
-'''
-def bidirectional_lstm_layer(Vs, W_forget, W_input, W_cell, W_output, hidden_dimension_size=None):
-
-    forwards_h = lstm_layer(Vs, W_forget[0], W_input[0], W_cell[0], W_output[0], forwards=True, hidden_dimension_size=hidden_dimension_size)
-    backwards_h = lstm_layer(Vs, W_forget[1], W_input[1], W_cell[1], W_output[1], forwards=False, hidden_dimension_size=hidden_dimension_size)
-
-    return T.concatenate((forwards_h, backwards_h), axis=1)
-
-def fourdirectional_lstm_layer(VM, W_forget, W_input, W_cell, W_output, hidden_dimension_size=None):
-    lstm_sidewards, _ = theano.scan(fn=lambda a,b,c,d,e: bidirectional_lstm_layer(a,b,c,d,e, hidden_dimension_size=self.hidden_dimension),
-                                                 outputs_info=None,
-                                                 sequences=pairwise_vs,
-                                                 non_sequences=[W_forget[:2], W_input[:2], W_cell[:2], W_output[:2]])
-
-    transpose_vs = pairwise_vs.transpose(1,0,2)
-
-    lstm_downwards, _ = theano.scan(fn=lambda a,b,c,d,e: bidirectional_lstm_layer(a,b,c,d,e, hidden_dimension_size=self.hidden_dimension),
-                                                 outputs_info=None,
-                                                 sequences=transpose_vs,
-                                                 non_sequences=[W_forget[2:], W_input[2:], W_cell[2:], W_output[2:]])
-
-    return T.concatenate((lstm_sidewards,lstm_downwards.transpose(1,0,2)), axis=2)
-'''
 
 def linear_layer(input_vector, weight_matrix):
     input_with_bias = T.concatenate((input_vector, [1]))
