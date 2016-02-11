@@ -228,25 +228,6 @@ class FourwayLstm(superclass.RNN):
         return out_sentences
 
 
-    def save(self, filename):
-        store_list = self.get_weight_list()
-        
-        outfile1 = open(filename, 'wb')
-        pickle.dump(store_list, outfile1)
-        outfile1.close()
-
-        
-    def load(self, filename):
-        infile = open(filename, 'rb')
-        store_list = pickle.load(infile)
-        infile.close()
-
-        self.W_final = store_list[0]
-        self.W_forget = store_list[1]
-        self.W_input = store_list[2]
-        self.W_cell = store_list[3]
-        self.W_output = store_list[4]
-
     
 def fit(features, labels, model_path=None):
 

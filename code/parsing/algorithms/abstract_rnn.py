@@ -105,3 +105,23 @@ class RNN():
             
             current_loss = self.batch_loss(sentences, lengths, labels)
             self.save(self.save_path)
+
+
+    '''
+    Persistence:
+    '''
+    
+    def save(self, filename):
+        store_list = self.get_weight_list()
+        
+        outfile1 = open(filename, 'wb')
+        pickle.dump(store_list, outfile1)
+        outfile1.close()
+
+        
+    def load(self, filename):
+        infile = open(filename, 'rb')
+        store_list = pickle.load(infile)
+        infile.close()
+
+        self.update_weights(store_list)
