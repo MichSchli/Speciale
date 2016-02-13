@@ -65,11 +65,8 @@ class FourwayLstm(superclass.RNN):
         return padded_result
 
         
-    def __theano_sentence_loss(self, Vs, sentence_length, gold, W_final,
-                                     W_forget, W_input, W_cell, W_output,
-                               W_forget_e, W_input_e, W_cell_e, W_output_e):
-        preds = self.__theano_sentence_prediction(Vs, sentence_length, W_final, W_forget, W_input, W_cell, W_output,
-                               W_forget_e, W_input_e, W_cell_e, W_output_e)
+    def __theano_sentence_loss(self, Vs, sentence_length, gold):
+        preds = self.__theano_sentence_prediction(Vs, sentence_length)
 
         gold = gold[:sentence_length, :sentence_length+1]
         losses = T.nnet.categorical_crossentropy(preds, gold)
@@ -77,11 +74,11 @@ class FourwayLstm(superclass.RNN):
         return T.sum(losses)
 
 
-    def __theano_batch_loss(self, Vs, sentence_lengths, Gs, W_final, W_forget, W_input, W_cell, W_output,W_forget_e, W_input_e, W_cell_e, W_output_e):
+    def __theano_batch_loss(self, Vs, sentence_lengths, Gs):
         losses, __ = theano.scan(fn=self.__theano_sentence_loss,
                                 outputs_info=None,
                                 sequences=[Vs,sentence_lengths, Gs],
-                                non_sequences=[W_final, W_forget, W_input, W_cell, W_output,W_forget_e, W_input_e, W_cell_e, W_output_e])
+                                 non_sequences=None)
 
         return T.sum(losses)
 
@@ -105,19 +102,15 @@ class FourwayLstm(superclass.RNN):
                                   sequences=Vs,
                                   non_sequences=[Vs, sentence_length])
         
-        #layer = network_ops.fourdirectional_lstm_layer(self.hidden_dimension)
-
         full_lstm = self.first_lstm_layer.function(pairwise_vs)
 
-        #full_lstm = self.second_lstm_layer.function(full_lstm)
+        full_lstm = self.second_lstm_layer.function(full_lstm)
 
         #Todo: scan
         #full_lstm1 = layer.function(full_lstm, W_forget_e[0], W_input_e[0], W_cell_e[0], W_output_e[0])
         #full_lstm2 = layer.function(full_lstm1, W_forget_e[1], W_input_e[1], W_cell_e[1], W_output_e[1])
         #full_lstm3 = layer.function(full_lstm2, W_forget_e[2], W_input_e[2], W_cell_e[2], W_output_e[2])
-
-        #conv = network_ops.linear_tensor_convolution_layer(1)
-
+        
         final_matrix = self.output_convolution.function(full_lstm)
 
         return T.nnet.softmax(final_matrix)
@@ -158,21 +151,9 @@ class FourwayLstm(superclass.RNN):
         return newFin, newFor, newInp, newCel, newOut, newFor_e, newInp_e, newCel_e, newOut_e, newUpdFin, newUpdFor, newUpdInp, newUpdCel, newUpdOut, newUpdFor_e, newUpdInp_e, newUpdCel_e, newUpdOut_e
 
     def get_weight_list(self):
-        #return self.W_final, self.W_forget, self.W_input, self.W_cell, self.W_output, self.W_forget_e, self.W_input_e, self.W_cell_e, self.W_output_e
         return self.first_lstm_layer.get_python_weights() + self.second_lstm_layer.get_python_weights() + self.output_convolution.get_python_weights()
     
     def get_theano_weight_list(self):
-        #W_final = T.dvector('W_final')
-        #W_forget = T.dtensor3('W_forget')
-        #W_input = T.dtensor3('W_input')
-        #W_cell = T.dtensor3('W_cell')
-        #W_output = T.dtensor3('W_output')
-
-        #W_forget_e = T.dtensor4('W_forget_e')
-        #W_input_e = T.dtensor4('W_input_e')
-        #W_cell_e = T.dtensor4('W_cell_e')
-        #W_output_e = T.dtensor4('W_output_e')
-
         return self.first_lstm_layer.get_theano_weights() + self.second_lstm_layer.get_theano_weights() + self.output_convolution.get_theano_weights()
 
     def get_initial_weight_updates(self):
@@ -201,6 +182,10 @@ class FourwayLstm(superclass.RNN):
         self.W_cell_e = update_list[7]
         self.W_output_e = update_list[8]
 
+    '''
+    Loss (move to abstract):
+    '''
+        
     def build_loss_graph(self):
         print("Building loss graph...")
         Vs = T.dtensor3('Vs')
@@ -209,7 +194,7 @@ class FourwayLstm(superclass.RNN):
         
         weight_list = self.get_theano_weight_list()
          
-        result = self.__theano_batch_loss(Vs, Ls, Gs, *weight_list)
+        result = self.__theano_batch_loss(Vs, Ls, Gs)
 
         input_list = [Vs, Ls, Gs] + list(weight_list)
         return theano.function(inputs=input_list, on_unused_input='warn', outputs=result)
@@ -218,19 +203,21 @@ class FourwayLstm(superclass.RNN):
 
         if self.loss_graph is None:
             self.loss_graph = self.build_loss_graph()
-        
-        res = self.loss_graph(sentences, lengths, golds, self.W_final, self.W_forget, self.W_input, self.W_cell, self.W_output,
-                              self.W_forget_e, self.W_input_e, self.W_cell_e, self.W_output_e)
+
+        weights = self.get_weight_list()        
+        res = self.loss_graph(sentences, lengths, golds, *weights)
 
         return res
+
+    '''
+    Prediction (move to abstract):
+    '''
 
     def build_predict_graph(self):
         print("Building prediction graph...")
         Vs = T.dtensor3('Vs')
         Ls = T.ivector('Ls')
         weight_list = self.get_theano_weight_list()
-
-        print(weight_list)
         
         result = self.__theano_batch_prediction(Vs, Ls)
         input_list = [Vs, Ls] + list(weight_list)
@@ -247,7 +234,6 @@ class FourwayLstm(superclass.RNN):
         
         if self.predict_graph is None:
             self.predict_graph = self.build_predict_graph()
-            
 
         weights = self.get_weight_list()
         res = self.predict_graph(sentences, lengths, *weights)
@@ -261,9 +247,7 @@ class FourwayLstm(superclass.RNN):
 
     
 def fit(features, labels, model_path=None):
-
     model = FourwayLstm()
-
     #model.load(model_path)
 
     model.save_path = model_path
@@ -271,7 +255,7 @@ def fit(features, labels, model_path=None):
     
 def predict(features, model_path=None):
     model = FourwayLstm()
-    #model.load(model_path)
+    model.load(model_path)
 
     predictions = model.batch_predict(features)
     
