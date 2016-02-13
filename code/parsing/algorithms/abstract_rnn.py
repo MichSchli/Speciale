@@ -1,6 +1,7 @@
 import numpy as np
 from theano import tensor as T
 import theano
+import pickle
 
 class RNN():
 
@@ -73,6 +74,8 @@ class RNN():
         return cgraph
     
     def train(self, sentences, labels):
+
+        
         if self.sgd_graph is None:
             self.sgd_graph = self.build_sgd_graph()
 
