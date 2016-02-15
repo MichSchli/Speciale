@@ -24,6 +24,15 @@ class single_lstm():
         self.W_output = np.random.rand(self.output_neurons, self.input_neurons + self.output_neurons + 1)
 
 
+    def update_weights(self, update_list):
+        self.W_forget = update_list[0]
+        self.W_input = update_list[1]
+        self.W_candidate = update_list[2]
+        self.W_output = update_list[3]
+
+    def weight_count(self):
+        return 4
+        
     def get_theano_weights(self):
         return self.W_forget_theano, self.W_input_theano, self.W_candidate_theano, self.W_output_theano
 
@@ -54,6 +63,12 @@ class lstm_layer():
         self.name = name
         self.neuron=single_lstm(name, input_neurons, output_neurons)
 
+    def update_weights(self, update_list):
+        self.neuron.update_weights(update_list)
+
+    def weight_count(self):
+        return self.neuron.weight_count()
+    
     def get_theano_weights(self):
         return self.neuron.get_theano_weights()
 
@@ -84,6 +99,13 @@ class bidirectional_lstm_layer():
         self.forward = lstm_layer(name + '_forward', input_neurons, output_neurons, True)
         self.backward = lstm_layer(name + '_backward', input_neurons, output_neurons, False)
 
+    def update_weights(self, update_list):
+        self.forward.update_weights(update_list[:self.forward.weight_count()])
+        self.backward.update_weights(update_list[self.forward.weight_count():])
+
+    def weight_count(self):
+        return self.forward.weight_count() + self.backward.weight_count()
+        
     def get_theano_weights(self):
         return self.forward.get_theano_weights() + self.backward.get_theano_weights()
 
@@ -109,6 +131,14 @@ class fourdirectional_lstm_layer():
         self.sideward_layer = bidirectional_lstm_layer(name + '_sideward', input_neurons, output_neurons)
         self.downward_layer = bidirectional_lstm_layer(name + '_downward', input_neurons, output_neurons)
 
+
+    def update_weights(self, update_list):
+        self.sideward_layer.update_weights(update_list[:self.sideward_layer.weight_count()])
+        self.downward_layer.update_weights(update_list[self.downward_layer.weight_count():])
+
+    def weight_count(self):
+        return self.sideward_layer.weight_count() + self.downward_layer.weight_count()
+        
     def get_theano_weights(self):
         return self.sideward_layer.get_theano_weights() + self.downward_layer.get_theano_weights()
 
@@ -177,6 +207,12 @@ class linear_layer():
             self.weight_matrix_theano = T.dmatrix(name + '_weight')
             self.weight_matrix = np.random.rand(self.output_neurons, self.input_neurons+1)
 
+    
+    def update_weights(self, update_list):
+        self.weight_matrix = update_list[0]
+        
+    def weight_count(self):
+        return 1
             
     def get_theano_weights(self):
         return (self.weight_matrix_theano,)
@@ -198,6 +234,12 @@ class linear_tensor_convolution_layer():
         
         self.neuron = linear_layer(name, input_neurons, output_neurons)
 
+    def update_weights(self, update_list):
+        self.neuron.update_weights(update_list)
+        
+    def weight_count(self):
+        return self.neuron.weight_count()
+        
     def get_theano_weights(self):
         return self.neuron.get_theano_weights()
 

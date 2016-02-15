@@ -51,41 +51,32 @@ class RNN():
     def build_sgd_graph(self):
         print("Building graph...")
         
-        Vs = T.dtensor4('Vs')
-        Ls = T.imatrix('Ls')
-        Gs = T.tensor4('Gs')
+        Vs = T.dtensor3('Vs')
+        Ls = T.ivector('Ls')
+        Gs = T.dtensor3('Gs')
 
         theano_weight_list = self.get_theano_weight_list()
-        initial_weight_updates = self.get_initial_weight_updates()
-        function_output_init = theano_weight_list + initial_weight_updates
-
-        results, _ =  theano.scan(fn=self.theano_sgd,
-                                  outputs_info=function_output_init,
-                                  sequences=[Vs, Ls, Gs],
-                                  non_sequences=None)
-
-        final_output_list = [results[j][-1] for j in range(len(theano_weight_list))]
 
         input_list = [Vs, Ls, Gs] + list(theano_weight_list)
-        cgraph = theano.function(inputs=input_list, outputs=final_output_list)
-
+        grads = self.theano_sgd(Vs, Ls, Gs)
+        
+        cgraph = theano.function(inputs=input_list, outputs=grads)
+        
         print("Done building graph")
         
         return cgraph
     
     def train(self, sentences, labels):
 
-        
         if self.sgd_graph is None:
             self.sgd_graph = self.build_sgd_graph()
-
                     
         lengths = np.array([len(s) for s in sentences])
         lengths = lengths.astype(np.int32)
 
         sentences = self.pad_sentences(sentences)
         labels = self.pad_golds(labels)
-
+        
         length_chunks = self.chunk(lengths)
         sentence_chunks = self.chunk(sentences)
         label_chunks = self.chunk(labels)
@@ -94,17 +85,24 @@ class RNN():
         prev_loss = current_loss +1
 
         iteration_counter = 1
+
+        weight_list = self.get_weight_list()
+        updates = [np.zeros_like(weight) for weight in weight_list]
         
         while(prev_loss - current_loss > self.error_margin and iteration_counter < 100):
-
             prev_loss = current_loss
             print("Running gradient descent at iteration "+str(iteration_counter)+". Current loss: "+str(prev_loss))
             iteration_counter += 1
             
-            weight_list = self.get_weight_list()
-            out_list = self.sgd_graph(sentence_chunks, length_chunks, label_chunks, *weight_list)
+            for data_batch, length_batch, label_batch in zip(sentence_chunks, length_chunks, label_chunks):
+                gradients = self.sgd_graph(data_batch, length_batch, label_batch, *weight_list)
+                print('.')
 
-            self.update_weights(out_list)
+                for i in range(len(weight_list)):
+                    updates[i] = self.learning_rate * gradients[i] + self.momentum * updates[i]
+                    weight_list[i] -= updates[i]
+
+                self.update_weights(weight_list)
             
             current_loss = self.batch_loss(sentences, lengths, labels)
             self.save(self.save_path)

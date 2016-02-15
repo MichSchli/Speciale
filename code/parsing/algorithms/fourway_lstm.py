@@ -116,39 +116,15 @@ class FourwayLstm(superclass.RNN):
         return T.nnet.softmax(final_matrix)
 
 
-    def theano_sgd(self, Vs, Ls, Gs,
-                     W_final, W_forget, W_input, W_cell, W_output,
-                     W_forget_e, W_input_e, W_cell_e, W_output_e,
-                     W_final_prevupd, W_forget_prevupd, W_input_prevupd, W_cell_prevupd, W_output_prevupd,
-                     W_forget_prevupd_e, W_input_prevupd_e, W_cell_prevupd_e, W_output_prevupd_e):
+    def theano_sgd(self, Vs, Ls, Gs):
 
-        loss = self.__theano_batch_loss(Vs, Ls, Gs, W_final, W_forget, W_input, W_cell, W_output,W_forget_e, W_input_e, W_cell_e, W_output_e)
+        loss = self.__theano_batch_loss(Vs, Ls, Gs)
 
-        grads = T.grad(loss, [W_final, W_forget, W_input, W_cell, W_output,W_forget_e, W_input_e, W_cell_e, W_output_e])
+        weight_list = list(self.get_theano_weight_list())
+        grads = T.grad(loss, weight_list)
 
-        newUpdFin = grads[0]*self.learning_rate + W_final_prevupd*self.momentum
-        newUpdFor = grads[1]*self.learning_rate + W_forget_prevupd*self.momentum
-        newUpdInp = grads[2]*self.learning_rate + W_input_prevupd*self.momentum
-        newUpdCel = grads[3]*self.learning_rate + W_cell_prevupd*self.momentum
-        newUpdOut = grads[4]*self.learning_rate + W_output_prevupd*self.momentum
+        return grads
 
-        newUpdFor_e = grads[5]*self.learning_rate + W_forget_prevupd_e*self.momentum
-        newUpdInp_e = grads[6]*self.learning_rate + W_input_prevupd_e*self.momentum
-        newUpdCel_e = grads[7]*self.learning_rate + W_cell_prevupd_e*self.momentum
-        newUpdOut_e = grads[8]*self.learning_rate + W_output_prevupd_e*self.momentum
-        
-        newFin = W_final - newUpdFin
-        newFor = W_forget - newUpdFor
-        newInp = W_input - newUpdInp
-        newCel = W_cell - newUpdCel
-        newOut = W_output - newUpdOut
-
-        newFor_e = W_forget_e - newUpdFor_e
-        newInp_e = W_input_e - newUpdInp_e
-        newCel_e = W_cell_e - newUpdCel_e
-        newOut_e = W_output_e - newUpdOut_e
-
-        return newFin, newFor, newInp, newCel, newOut, newFor_e, newInp_e, newCel_e, newOut_e, newUpdFin, newUpdFor, newUpdInp, newUpdCel, newUpdOut, newUpdFor_e, newUpdInp_e, newUpdCel_e, newUpdOut_e
 
     def get_weight_list(self):
         return self.first_lstm_layer.get_python_weights() + self.second_lstm_layer.get_python_weights() + self.output_convolution.get_python_weights()
@@ -156,31 +132,10 @@ class FourwayLstm(superclass.RNN):
     def get_theano_weight_list(self):
         return self.first_lstm_layer.get_theano_weights() + self.second_lstm_layer.get_theano_weights() + self.output_convolution.get_theano_weights()
 
-    def get_initial_weight_updates(self):
-        w_forget_upd = np.zeros_like(self.W_forget)
-        w_input_upd = np.zeros_like(self.W_input)
-        w_cell_upd = np.zeros_like(self.W_cell)
-        w_output_upd = np.zeros_like(self.W_output)
-        w_final_upd = np.zeros_like(self.W_final)
-
-        w_forget_upd_e = np.zeros_like(self.W_forget_e)
-        w_input_upd_e = np.zeros_like(self.W_input_e)
-        w_cell_upd_e = np.zeros_like(self.W_cell_e)
-        w_output_upd_e = np.zeros_like(self.W_output_e)
-        
-        return w_final_upd, w_forget_upd, w_input_upd, w_cell_upd, w_output_upd, w_forget_upd_e, w_input_upd_e, w_cell_upd_e, w_output_upd_e
-
     def update_weights(self, update_list):
-        self.W_final = update_list[0]
-        self.W_forget = update_list[1]
-        self.W_input = update_list[2]
-        self.W_cell = update_list[3]
-        self.W_output = update_list[4]
-
-        self.W_forget_e = update_list[5]
-        self.W_input_e = update_list[6]
-        self.W_cell_e = update_list[7]
-        self.W_output_e = update_list[8]
+        self.first_lstm_layer.update_weights(update_list[:self.first_lstm_layer.weight_count()])
+        self.second_lstm_layer.update_weights(update_list[self.first_lstm_layer.weight_count():self.first_lstm_layer.weight_count()+self.second_lstm_layer.weight_count()])
+        self.output_convolution.update_weights(update_list[self.second_lstm_layer.weight_count():self.first_lstm_layer.weight_count()+self.second_lstm_layer.weight_count()+self.output_convolution.weight_count()])
 
     '''
     Loss (move to abstract):
