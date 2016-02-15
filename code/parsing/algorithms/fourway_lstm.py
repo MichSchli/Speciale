@@ -33,6 +33,12 @@ class FourwayLstm(superclass.RNN):
         self.second_lstm_layer = network_ops.fourdirectional_lstm_layer('second_layer', self.hidden_dimension * 4, self.hidden_dimension)
         self.output_convolution = network_ops.linear_tensor_convolution_layer('output_layer', self.hidden_dimension * 4, 1)
 
+        self.layers = [self.first_lstm_layer, self.second_lstm_layer, self.output_convolution]
+
+        print(self.get_weight_list())
+        print(self.get_theano_weight_list())
+        self.update_weights(self.get_weight_list())
+        exit()
         
     '''
     Theano functions:
@@ -126,17 +132,8 @@ class FourwayLstm(superclass.RNN):
         return grads
 
 
-    def get_weight_list(self):
-        return self.first_lstm_layer.get_python_weights() + self.second_lstm_layer.get_python_weights() + self.output_convolution.get_python_weights()
-    
-    def get_theano_weight_list(self):
-        return self.first_lstm_layer.get_theano_weights() + self.second_lstm_layer.get_theano_weights() + self.output_convolution.get_theano_weights()
 
-    def update_weights(self, update_list):
-        self.first_lstm_layer.update_weights(update_list[:self.first_lstm_layer.weight_count()])
-        self.second_lstm_layer.update_weights(update_list[self.first_lstm_layer.weight_count():self.first_lstm_layer.weight_count()+self.second_lstm_layer.weight_count()])
-        self.output_convolution.update_weights(update_list[self.second_lstm_layer.weight_count():self.first_lstm_layer.weight_count()+self.second_lstm_layer.weight_count()+self.output_convolution.weight_count()])
-
+            
     '''
     Loss (move to abstract):
     '''

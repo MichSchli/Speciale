@@ -44,6 +44,26 @@ class RNN():
         return np.array(new_labels)
 
     '''
+    Weight functions:
+    '''
+
+    def get_weight_list(self):
+        return [weight for layer in self.layers for weight in layer.get_python_weights()]
+
+    
+    def get_theano_weight_list(self):
+        return [weight for layer in self.layers for weight in layer.get_theano_weights()]
+
+    
+    def update_weights(self, update_list):
+        prev_count = 0
+        for layer in self.layers:
+            current_count = prev_count + layer.weight_count()
+            layer.update_weights(update_list[prev_count:current_count])
+            prev_count = current_count
+
+            
+    '''
     SGD:
     '''
 
