@@ -29,7 +29,7 @@ class MinibatchOptimizer(Optimizer):
         self.batch_size = batch_size
 
     def chunk(self, l):
-        return np.array(list(zip(*[iter(l)]*self.batch_size)))
+        return np.array([l[i:i+self.batch_size] for i in range(0, len(l), self.batch_size)])
         
     def update(self, sentences, lengths, labels):
         length_chunks = self.chunk(lengths)
@@ -71,11 +71,68 @@ class StochasticGradientDescent(MinibatchOptimizer):
 
     def batch_update(self, data_batch, length_batch, label_batch):
         gradients = self.gradient_function(data_batch, length_batch, label_batch, *self.weights)
+        
+        for i, gradient in enumerate(gradients):
+            self.updates[i] = -self.learning_rate*gradient + self.momentum * self.updates[i]
 
         if self.verbose:
             print('.', end='', flush=True)
 
-        for i, gradient in enumerate(gradients):
-            self.updates[i] = -self.learning_rate*gradient + self.momentum * self.updates[i]
-            
 
+class AdaDelta(MinibatchOptimizer):
+
+    epsillon = 10**(-6)
+    
+    def __init__(self, algorithm, batch_size, decay_rate, verbose=False):
+        super().__init__(algorithm, batch_size)
+
+        self.decay_rate = decay_rate
+        self.verbose = verbose
+
+        self.running_average = [np.zeros_like(weight) for weight in self.weights]
+
+    def batch_update(self, data_batch, length_batch, label_batch):
+        gradients = self.gradient_function(data_batch, length_batch, label_batch, *self.weights)
+
+        for i, gradient in enumerate(gradients):
+            square_gradient = np.square(gradient)
+            self.running_average[i] = self.decay_rate * self.running_average[i] + (1 - self.decay_rate) * square_gradient
+
+            rmsx = np.sqrt(np.square(self.updates[i]) + self.epsillon)
+            rmsgrad = np.sqrt(self.running_average[i] + self.epsillon)
+            
+            self.updates[i] = -rmsx / rmsgrad * gradient
+
+        if self.verbose:
+            print('.', end='', flush=True)
+
+        
+
+class RMSProp(MinibatchOptimizer):
+
+    epsillon = 10**(-6)
+
+    def __init__(self, algorithm, batch_size, decay_rate, learning_rate, verbose=False):
+        super().__init__(algorithm, batch_size)
+
+        self.decay_rate = decay_rate
+        self.learning_rate = learning_rate
+        self.verbose = verbose
+
+        self.running_average = [np.zeros_like(weight) for weight in self.weights]
+
+    def batch_update(self, data_batch, length_batch, label_batch):
+        gradients = self.gradient_function(data_batch, length_batch, label_batch, *self.weights)
+
+        for i, gradient in enumerate(gradients):
+            square_gradient = np.square(gradient)
+            self.running_average[i] = self.decay_rate * self.running_average[i] + (1 - self.decay_rate) * square_gradient
+
+            rmsgrad = np.sqrt(self.running_average[i] + self.epsillon)
+            
+            self.updates[i] = -self.learning_rate / rmsgrad * gradient
+
+        if self.verbose:
+            print('.', end='', flush=True)
+
+        

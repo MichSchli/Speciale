@@ -232,7 +232,7 @@ class RNN():
         if self.loss_graph is None:
             self.loss_graph = self.build_loss_graph()
 
-        optimizer = optimizers.StochasticGradientDescent(self, 50, 0.001, 0.1, True)
+        optimizer = optimizers.RMSProp(self, 20, 0.9, 0.001, True)
 
         lengths = np.array([len(s) for s in sentences])
         lengths = lengths.astype(np.int32)
@@ -240,38 +240,6 @@ class RNN():
         labels = self.pad_golds(labels)
 
         optimizer.update(sentences, lengths, labels)
-
-        '''
-        length_chunks = self.chunk(lengths)
-        sentence_chunks = self.chunk(sentences)
-        label_chunks = self.chunk(labels)
-
-        current_loss = self.batch_loss(sentences, lengths, labels)
-        prev_loss = current_loss +1
-
-        iteration_counter = 1
-
-        weight_list = self.get_weight_list()
-        updates = [np.zeros_like(weight) for weight in weight_list]
-        
-        while(prev_loss - current_loss > self.error_margin and iteration_counter < 100):
-            prev_loss = current_loss
-            print("Running gradient descent at iteration "+str(iteration_counter)+". Current loss: "+str(prev_loss))
-            iteration_counter += 1
-            
-            for data_batch, length_batch, label_batch in zip(sentence_chunks, length_chunks, label_chunks):
-                gradients = self.sgd_graph(data_batch, length_batch, label_batch, *weight_list)
-                print('.')
-
-                for i in range(len(weight_list)):
-                    updates[i] = self.learning_rate * gradients[i] + self.momentum * updates[i]
-                    weight_list[i] -= updates[i]
-
-                self.update_weights(weight_list)
-            
-            current_loss = self.batch_loss(sentences, lengths, labels)
-            self.save(self.save_path)
-       '''
 
 
 
