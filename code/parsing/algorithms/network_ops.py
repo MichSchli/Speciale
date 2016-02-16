@@ -161,6 +161,7 @@ class fourdirectional_lstm_layer():
 
         return T.concatenate((lstm_sidewards,lstm_downwards.transpose(1,0,2)), axis=2)
 
+    
 class corner_lstm_layer():
     
     
@@ -192,14 +193,34 @@ class corner_lstm_layer():
     
     def get_python_weights(self):
         return tuple(w for lstm in self.lstms for w in lstm.get_python_weights())
+
+    def __conc_wrapper(self, V, hs, layer_function):
+        inp = T.concatenate((V, hs), axis=1)
+        return layer_function(inp)
     
     def function(self, VM):
         init_hs = T.zeros((VM.shape[1], self.output_neurons))
 
-        #For each lstm:
-        #  Scan:
-        #    Concatenate hs, layer.function
-        #Concatenate output matrices
+        lstm_out_1, _ = theano.scan(fn=lambda a,b: self.__conc_wrapper(a,b,self.d_forward.function),
+                                      outputs_info=init_hs,
+                                      sequences=transpose_vm,
+                                      non_sequences=None)
+        lstm_out_2, _ = theano.scan(fn=lambda a,b: self.__conc_wrapper(a,b,self.d_backward.function),
+                                      outputs_info=init_hs,
+                                      sequences=transpose_vm,
+                                      non_sequences=None)
+
+        lstm_out_3, _ = theano.scan(fn=lambda a,b: self.__conc_wrapper(a,b,self.u_forward.function),
+                                      outputs_info=init_hs,
+                                      sequences=transpose_vm,
+                                      non_sequences=None)
+
+        lstm_out_4, _ = theano.scan(fn=lambda a,b: self.__conc_wrapper(a,b,self.u_backward.function),
+                                      outputs_info=init_hs,
+                                      sequences=transpose_vm,
+                                      non_sequences=None)
+
+        return T.concatenate((lstm_out_1, lstm_out_2, lstm_out_3, lstm_out_4), axis=2)
 
     
 class linear_layer():

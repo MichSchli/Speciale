@@ -227,12 +227,12 @@ class RNN():
     def train(self, sentences, labels):
 
         if self.sgd_graph is None:
-            self.sgd_graph = self.build_sgd_graph()
+            self.sgd_graph = self.build_sgd_graph('graphs/grad.graph')
 
         if self.loss_graph is None:
-            self.loss_graph = self.build_loss_graph()
+            self.loss_graph = self.build_loss_graph('graphs/loss.graph')
 
-        optimizer = optimizers.RMSProp(self, 20, 0.9, 0.001, True)
+        optimizer = optimizers.AdaDelta(self, 30, 0.9, True)
 
         lengths = np.array([len(s) for s in sentences])
         lengths = lengths.astype(np.int32)

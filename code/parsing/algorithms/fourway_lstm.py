@@ -29,12 +29,11 @@ class FourwayLstm(superclass.RNN):
     def __init__(self):
         super().__init__()
         
-        #self.first_lstm_layer = network_ops.fourdirectional_lstm_layer('first_layer', self.input_dimension * 2, self.hidden_dimension)
-        #self.second_lstm_layer = network_ops.fourdirectional_lstm_layer('second_layer', self.hidden_dimension * 4, self.hidden_dimension)
-        #self.output_convolution = network_ops.linear_tensor_convolution_layer('output_layer', self.hidden_dimension * 4, 1)
-        self.output_convolution = network_ops.linear_tensor_convolution_layer('output_layer', self.input_dimension * 2, 1)
-
-        self.layers = [self.output_convolution] #[self.first_lstm_layer,  self.second_lstm_layer, self.output_convolution]
+        self.first_lstm_layer = network_ops.fourdirectional_lstm_layer('first_layer', self.input_dimension * 2, self.hidden_dimension)
+        self.second_lstm_layer = network_ops.fourdirectional_lstm_layer('second_layer', self.hidden_dimension * 4, self.hidden_dimension)
+        self.output_convolution = network_ops.linear_tensor_convolution_layer('output_layer', self.hidden_dimension * 4, 1)
+        
+        self.layers = [self.first_lstm_layer,  self.second_lstm_layer, self.output_convolution]
 
         
     '''
@@ -70,14 +69,11 @@ class FourwayLstm(superclass.RNN):
                                   sequences=Vs,
                                   non_sequences=[Vs, sentence_length])
         
-        #full_lstm = self.first_lstm_layer.function(pairwise_vs)
-        #full_lstm = self.second_lstm_layer.function(full_lstm)
-        final_matrix = self.output_convolution.function(pairwise_vs)
+        full_lstm = self.first_lstm_layer.function(pairwise_vs)
+        full_lstm = self.second_lstm_layer.function(full_lstm)
+        final_matrix = self.output_convolution.function(full_lstm)
 
         return T.nnet.softmax(final_matrix)
-
-
-
 
     
 def fit(features, labels, model_path=None):
