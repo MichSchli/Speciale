@@ -161,36 +161,45 @@ class fourdirectional_lstm_layer():
 
         return T.concatenate((lstm_sidewards,lstm_downwards.transpose(1,0,2)), axis=2)
 
-#Fix later:        
 class corner_lstm_layer():
-
     
-    def __init__(self, hidden_neurons, x_length, y_length):
-        self.hidden_neurons = hidden_neurons
-        self.x_length = x_length
-        self.y_length = y_length
+    
+    def __init__(self, name, input_neurons, output_neurons):
+        self.input_neurons = input_neurons
+        self.output_neurons = output_neurons
 
-        self.layer = bidirectional_lstm_layer(hidden_neurons)
+        self.name = name
+        self.d_forward = lstm_layer(name + 'down_forward', input_neurons, output_neurons, True)
+        self.d_backward = lstm_layer(name + 'down_backward', input_neurons, output_neurons, False)
+        self.u_forward = lstm_layer(name + 'up_forward', input_neurons, output_neurons, True)
+        self.u_backward = lstm_layer(name + 'up_backward', input_neurons, output_neurons, False)
 
-    def __wrapper(Vs, prev_hs, W_forget, W_input, W_cell, W_output):
-        inputs = T.concatenate((Vs, prev_hs), axis=1)
+        self.lstms = [self.d_forward, self.d_backward, self.u_forward, self.u_backward]
 
-        return self.layer.function(inputs, W_forget, W_input, W_cell, W_output)
+
+    def update_weights(self, update_list):
+        prev = 0
+        for lstm in self.lstms:
+            cur = prev + lstm.weight_count()
+            lstm.update_weights(update_list[prev:cur])
+            prev = cur
+            
+    def weight_count(self):
+        return sum([lstm.weight_count() for lstm in self.lstms])
         
-    def function(self, VM, W_forget, W_input, W_cell, W_output):
-        init_hs = T.zeros((Vm.shape[0], self.hidden_neurons))
-        lstm_downwards, _ = theano.scan(fn=self.__wrapper,
-                                        outputs_info=init_hs,
-                                        sequences=VM,
-                                        non_sequences=[W_forget[:2], W_input[:2], W_cell[:2], W_output[:2]])
+    def get_theano_weights(self):
+        return tuple(w for lstm in self.lstms for w in lstm.get_theano_weights())
+    
+    def get_python_weights(self):
+        return tuple(w for lstm in self.lstms for w in lstm.get_python_weights())
+    
+    def function(self, VM):
+        init_hs = T.zeros((VM.shape[1], self.output_neurons))
 
-        lstm_upwards, _ = theano.scan(fn=self.__wrapper,
-                                        outputs_info=init_hs,
-                                        sequences=VM,
-                                        non_sequences=[W_forget[2:], W_input[2:], W_cell[2:], W_output[2:]],
-                                        go_backwards=True)
-
-        return T.concatenate((lstm_downwards, lstm_upwards), axis=2)
+        #For each lstm:
+        #  Scan:
+        #    Concatenate hs, layer.function
+        #Concatenate output matrices
 
     
 class linear_layer():
