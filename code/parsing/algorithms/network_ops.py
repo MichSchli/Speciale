@@ -18,10 +18,18 @@ class single_lstm():
         self.W_output_theano = T.dmatrix(self.name + '_output_weight')
 
         #Initialize python variables:
-        self.W_forget = np.random.rand(self.output_neurons, self.input_neurons + self.output_neurons + 1)
-        self.W_input = np.random.rand(self.output_neurons, self.input_neurons + self.output_neurons + 1)
-        self.W_candidate = np.random.rand(self.output_neurons, self.input_neurons + self.output_neurons + 1)
-        self.W_output = np.random.rand(self.output_neurons, self.input_neurons + self.output_neurons + 1)
+
+        high_init = np.sqrt(6)/np.sqrt(self.input_neurons + 2*self.output_neurons)
+        low_init = -high_init
+        
+        s = (self.output_neurons, self.input_neurons + self.output_neurons + 1)
+        self.W_forget = np.random.uniform(low=low_init, high=high_init, size=s)
+        self.W_input = np.random.uniform(low=low_init, high=high_init, size=s)
+        self.W_candidate = np.random.uniform(low=low_init, high=high_init, size=s)
+        self.W_output = np.random.uniform(low=low_init, high=high_init, size=s)
+
+        #Initialize forget bias to one:
+        self.W_forget[-1] = np.ones_like(self.W_forget[-1])
 
 
     def update_weights(self, update_list):
@@ -229,13 +237,16 @@ class linear_layer():
         self.input_neurons = input_neurons
         self.output_neurons = output_neurons
         self.name = name
+
+        high_init = np.sqrt(6)/np.sqrt(input_neurons + output_neurons)
+        low_init = -np.sqrt(6)/np.sqrt(input_neurons + output_neurons)
         
         if output_neurons == 1:
             self.weight_matrix_theano = T.dvector(name + '_weight')
-            self.weight_matrix = np.random.rand(self.input_neurons+1)
+            self.weight_matrix = np.random.uniform(low=low_init, high=high_init, size=self.input_neurons+1)
         else:
             self.weight_matrix_theano = T.dmatrix(name + '_weight')
-            self.weight_matrix = np.random.rand(self.output_neurons, self.input_neurons+1)
+            self.weight_matrix = np.random.uniform(low=low_init, high=high_init, size=(self.output_neurons, self.input_neurons+1))
 
     
     def update_weights(self, update_list):

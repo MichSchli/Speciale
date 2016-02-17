@@ -4,6 +4,9 @@ import theano
 import pickle
 import os.path
 import imp
+import sys
+
+sys.setrecursionlimit(10000)
 
 optimizers = imp.load_source('optimizers', 'code/parsing/algorithms/optimizers.py')
 
@@ -214,7 +217,7 @@ class RNN():
         grads = T.grad(loss, theano_weight_list)
 
         input_list = [Vs, Ls, Gs] + list(theano_weight_list)
-        cgraph = theano.function(inputs=input_list, outputs=grads)
+        cgraph = theano.function(inputs=input_list, outputs=grads, mode='FAST_RUN')
         
         print("Done building graph")
 
@@ -227,12 +230,12 @@ class RNN():
     def train(self, sentences, labels):
 
         if self.sgd_graph is None:
-            self.sgd_graph = self.build_sgd_graph('graphs/grad.graph')
+            self.sgd_graph = self.build_sgd_graph()
 
         if self.loss_graph is None:
-            self.loss_graph = self.build_loss_graph('graphs/loss.graph')
+            self.loss_graph = self.build_loss_graph()
 
-        optimizer = optimizers.AdaDelta(self, 30, 0.9, True)
+        optimizer = optimizers.RMSProp(self, 64, 0.9, 0.001, True)
 
         lengths = np.array([len(s) for s in sentences])
         lengths = lengths.astype(np.int32)
