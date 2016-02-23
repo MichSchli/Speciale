@@ -123,7 +123,7 @@ class RNN():
         sentences = self.pad_sentences(sentences)
         
         if self.predict_graph is None:
-            self.predict_graph = self.build_predict_graph('graphs/predict.graph')
+            self.predict_graph = self.build_predict_graph()
 
         print("Predicting...")
         weights = self.get_weight_list()

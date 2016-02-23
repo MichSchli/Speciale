@@ -13,12 +13,8 @@ class FourwayLstm(superclass.RNN):
     Fields:
     '''
 
-    hidden_dimension = 20
+    hidden_dimension = 10
     input_dimension = 50
-
-    learning_rate = 0.0005
-    momentum = 0.1
-    batch_size = 50
 
     error_margin = 0.000001
     
@@ -78,7 +74,7 @@ class FourwayLstm(superclass.RNN):
     
 def fit(features, labels, model_path=None):
     model = FourwayLstm()
-    #model.load(model_path)
+    model.load(model_path)
 
     model.save_path = model_path
     model.train(features, labels)

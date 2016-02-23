@@ -61,7 +61,7 @@ class MinibatchOptimizer(Optimizer):
         return np.array([l[i:i+self.batch_size] for i in range(0, len(l), self.batch_size)])
         
     def update(self, sentences, lengths, labels):
-        self.current_iteration = 1
+        self.current_iteration = 35
         
         length_chunks = self.chunk(lengths)
         sentence_chunks = self.chunk(sentences)
