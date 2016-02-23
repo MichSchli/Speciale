@@ -3,28 +3,44 @@ import numpy as np
 
 class Optimizer():
 
-    gradient_clipping_factor = 15
+    gradient_clipping_factor = None
+    use_gradient_noise = False
+    gradient_noise_eta = None
+    gradient_noise_gamma = None
 
-    use_gradient_noise = True
-    gradient_noise_eta = 0.01
-    gradient_noise_gamma = 0.55
-    
-    def __init__(self, algorithm):
-        assert(algorithm.loss_graph is not None)
-        assert(algorithm.sgd_graph is not None)
-        
-        self.algorithm = algorithm
-        self.loss_function = algorithm.loss_graph
-        self.gradient_function = algorithm.sgd_graph
-        
-        self.weights = algorithm.get_weight_list()
+    def initialize(self):
+        pass
 
+    def set_loss_function(self, function):
+        self.loss_function = function
+
+    def set_gradient_function(self, function):
+        self.gradient_function = function
+
+    def set_initial_weights(self, weights):
+        self.weights = weights
+        
+    def set_update_function(self, function):
+        self.update_function = function 
 
     def do_update(self):
-        self.algorithm.update_weights(self.weights)
-        self.algorithm.save(self.algorithm.save_path)
+        self.update_function(self.weights)
+        
+    def set_training_data(self, sentences, labels):
+        self.training_sentences = sentences
+        self.training_labels = labels
+        self.training_lengths = np.array([len(sentence) for sentence in sentences])
+        self.training_lengths = self.training_lengths.astype(np.int32)
 
-
+    def set_development_data(self, sentences, labels):
+        self.development_sentences = self.pad_sentences(sentences)
+        self.development_labels = self.pad_golds(labels)
+        self.development_lengths = np.array([len(sentence) for sentence in sentences])
+        self.development_lengths = self.development_lengths.astype(np.int32)
+    
+    def development_loss(self):
+        return self.loss_function(self.development_sentences, self.development_lengths, self.development_labels, *self.weights)
+    
     def process_gradients(self, gradients):
         if self.use_gradient_noise:
             std_dev = np.sqrt(self.gradient_noise_eta/(self.current_iteration**self.gradient_noise_gamma))
@@ -37,19 +53,58 @@ class Optimizer():
                 gradients = [g*float(self.gradient_clipping_factor)/gradient_l2_norm for g in gradients]
 
         return gradients
+
+
+    '''
+    Padding:
+    '''
         
+    def pad_sentences(self, sentence_list):
+        longest_sentence = max([len(x) for x  in sentence_list])        
+        new_sentences = np.zeros((len(sentence_list), longest_sentence, len(sentence_list[0][0])))
+
+        for i, sentence in enumerate(sentence_list):
+            new_sentences[i, :len(sentence), :] = sentence
+
+        return new_sentences
+
+    def pad_golds(self, sentence_labels):
+        longest_sentence = max([len(x) for x  in sentence_labels])
+        new_labels = np.zeros((len(sentence_labels), longest_sentence, longest_sentence+1))
+
+        for i, sentence in enumerate(sentence_labels):
+            for j,label in enumerate(sentence):
+                new_labels[i,j,:label.shape[0]] = label
+
+        return np.array(new_labels)
+
+    
 class MinibatchOptimizer(Optimizer):
 
-    max_iterations = 10
-    error_margin = 0.0000001
-    normalize_batches = True
-    gradient_clipping_factor = 15
+    batch_size = None
+    max_iterations = None
     
-    def __init__(self, algorithm, batch_size):
-        super().__init__(algorithm)
+    error_margin = 10**(-8)
+    normalize_batches = True
 
-        self.batch_size = batch_size
+    def initialize(self):
+        if self.batch_size is None or self.max_iterations is None:
+            raise Exception("Optimizer not fully specified in config file!")
 
+        super().initialize()
+                        
+    def batch_gradients(self, data_batch, length_batch, label_batch):
+        aggregate = None
+        for sentence, length, gold in zip(data_batch, length_batch, label_batch):
+            if aggregate is None:
+                aggregate = self.gradient_function(sentence, length, gold, *self.weights)
+            else:
+                new_g = self.gradient_function(sentence, length, gold, *self.weights)
+                aggregate = [aggregate[i] + new_g[i] for i in range(len(new_g))]
+
+        return aggregate
+                
+        
     def process_gradients(self, gradients):
         if self.normalize_batches:
             gradients = [g/self.batch_size for g in gradients]
@@ -60,14 +115,14 @@ class MinibatchOptimizer(Optimizer):
     def chunk(self, l):
         return np.array([l[i:i+self.batch_size] for i in range(0, len(l), self.batch_size)])
         
-    def update(self, sentences, lengths, labels):
+    def update(self):
         self.current_iteration = 1
         
-        length_chunks = self.chunk(lengths)
-        sentence_chunks = self.chunk(sentences)
-        label_chunks = self.chunk(labels)
+        length_chunks = self.chunk(self.training_lengths)
+        sentence_chunks = self.chunk(self.training_sentences)
+        label_chunks = self.chunk(self.training_labels)
 
-        current_loss = self.loss_function(sentences, lengths, labels, *self.weights)
+        current_loss = self.development_loss()
         prev_loss = current_loss +1
 
         self.updates = [np.zeros_like(weight) for weight in self.weights]
@@ -87,18 +142,16 @@ class MinibatchOptimizer(Optimizer):
             self.do_update()
 
             current_loss = self.loss_function(sentences, lengths, labels, *self.weights)
-            #print(current_loss)
 
 
 class StochasticGradientDescent(MinibatchOptimizer):
 
-    def __init__(self, algorithm, batch_size, learning_rate, momentum, verbose=False):
-        super().__init__(algorithm, batch_size)
+    def initialize(self):
+        if self.learning_rate is None or self.momentum is None:
+            raise Exception("Optimizer not fully specified in config file!")
 
-        self.learning_rate = learning_rate
-        self.momentum = momentum
-        self.verbose = verbose
-
+        super().initialize()
+        
     def batch_update(self, data_batch, length_batch, label_batch):
         gradients = self.gradient_function(data_batch, length_batch, label_batch, *self.weights)
         gradients = self.process_gradients(gradients)
@@ -112,18 +165,21 @@ class StochasticGradientDescent(MinibatchOptimizer):
 
 class AdaDelta(MinibatchOptimizer):
 
+    decay_rate = None
+    
     epsillon = 10**(-6)
     
-    def __init__(self, algorithm, batch_size, decay_rate, verbose=False):
-        super().__init__(algorithm, batch_size)
+    def initialize(self):
+        if self.decay_rate is None:
+            raise Exception("Optimizer not fully specified in config file!")
 
-        self.decay_rate = decay_rate
-        self.verbose = verbose
-
+        super().initialize()
+        
         self.running_average = [np.zeros_like(weight) for weight in self.weights]
-
+        
+        
     def batch_update(self, data_batch, length_batch, label_batch):
-        gradients = self.gradient_function(data_batch, length_batch, label_batch, *self.weights)
+        gradients = self.batch_gradients(data_batch, length_batch, label_batch)
         gradients = self.process_gradients(gradients)
 
         for i, gradient in enumerate(gradients):
@@ -142,19 +198,22 @@ class AdaDelta(MinibatchOptimizer):
 
 class RMSProp(MinibatchOptimizer):
 
+    decay_rate = None
+    learning_rate = None
+    
     epsillon = 10**(-6)
 
-    def __init__(self, algorithm, batch_size, decay_rate, learning_rate, verbose=False):
-        super().__init__(algorithm, batch_size)
+    def initialize(self):
+        if self.decay_rate is None or self.learning_rate is None:
+            raise Exception("Optimizer not fully specified in config file!")
 
-        self.decay_rate = decay_rate
-        self.learning_rate = learning_rate
-        self.verbose = verbose
-
+        super().initialize()
+        
         self.running_average = [np.zeros_like(weight) for weight in self.weights]
-
+        
+        
     def batch_update(self, data_batch, length_batch, label_batch):
-        gradients = self.gradient_function(data_batch, length_batch, label_batch, *self.weights)
+        gradients = self.batch_gradients(data_batch, length_batch, label_batch)
         gradients = self.process_gradients(gradients)
             
         for i, gradient in enumerate(gradients):
@@ -169,3 +228,42 @@ class RMSProp(MinibatchOptimizer):
             print('.', end='', flush=True)
 
         
+def from_config(config):
+    if 'algorithm' not in config:
+        raise Exception('Optimization algorithm not specified!')
+
+    if config['algorithm'] == 'SGD':
+        optimizer = StochasticGradientDescent()
+    elif config['algorithm'] == 'RMSProp':
+        optimizer = RMSProp()
+    elif config['algorithm'] == 'AdaDelta':
+        optimizer = AdaDelta()
+    else:
+        raise Exception('Optimization algorithm \"'+config['algorithm']+'\" unknown!')
+
+    if 'verbose' in config:
+        optimizer.verbose = bool(config['verbose'])
+
+    if 'max iterations' in config:
+        optimizer.max_iterations = int(config['max iterations'])
+        
+    if 'batch size' in config:
+        optimizer.batch_size = int(config['batch size'])
+
+    if 'learning rate' in config:
+        optimizer.learning_rate = float(config['learning rate'])
+
+    if 'decay rate' in config:
+        optimizer.decay_rate = float(config['decay rate'])
+        
+    if 'gradient clip' in config:
+        optimizer.gradient_clipping_factor = float(config['gradient clip'])
+    
+    if 'gradient noise' in config:
+        if 'noise eta' not in config or 'noise gamma' not in config:
+            raise Exception('Gradient noise parameters not specified')
+        optimizer.use_gradient_noise = bool(config['gradient noise'])
+        optimizer.gradient_noise_eta = float(config['noise eta'])
+        optimizer.gradient_noise_gamma = float(config['noise gamma'])
+
+    return optimizer

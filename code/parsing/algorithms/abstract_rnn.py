@@ -9,47 +9,34 @@ import sys
 sys.setrecursionlimit(10000)
 
 optimizers = imp.load_source('optimizers', 'code/parsing/algorithms/optimizers.py')
+io = imp.load_source('io', 'code/common/io.py')
 
 class RNN():
 
-    sgd_graph = None
-    loss_graph = None
     predict_graph = None
     
-    def __init__(self):
-        pass
-    
+    def __init__(self, optimizer_config_path):
+        if optimizer_config_path is not None:
+            self.optimizer = optimizers.from_config(io.read_config_file(optimizer_config_path))
+
+            self.optimizer.set_initial_weights(self.get_weight_list())
+            self.optimizer.set_loss_function(self.build_loss_graph())
+            self.optimizer.set_gradient_function(self.build_single_gradient_graph())
+            self.optimizer.set_update_function(self.update_function)
+
+            self.optimizer.initialize()
+
     '''
-    Padding:
+    Update:
     '''
-        
-    def pad_sentences(self, sentence_list):
-        longest_sentence = max([len(x) for x  in sentence_list])
-
-        self.max_words = longest_sentence
-        
-        new_sentences = np.zeros((len(sentence_list), longest_sentence, len(sentence_list[0][0])))
-
-        for i, sentence in enumerate(sentence_list):
-            new_sentences[i, :len(sentence), :] = sentence
-
-        return new_sentences
-
-    def pad_golds(self, sentence_labels):
-        longest_sentence = max([len(x) for x  in sentence_labels])
-
-        new_labels = np.zeros((len(sentence_labels), longest_sentence, longest_sentence+1))
-
-        for i, sentence in enumerate(sentence_labels):
-            for j,label in enumerate(sentence):
-                new_labels[i,j,:label.shape[0]] = label
-
-        return np.array(new_labels)
+    def update_function(self, weights):
+        self.update_weights(weights)
+        self.save(self.save_path)
 
     '''
     Weight functions:
     '''
-
+    
     def get_weight_list(self):
         return [weight for layer in self.layers for weight in layer.get_python_weights()]
 
@@ -107,7 +94,7 @@ class RNN():
         result = self.theano_batch_prediction(Vs, Ls)
         input_list = [Vs, Ls] + list(weight_list)
 
-        cgraph = theano.function(inputs=input_list, on_unused_input='warn', outputs=result)
+        cgraph = theano.function(inputs=input_list, on_unused_input='warn', outputs=result, mode='FAST_RUN')
 
         print("Done building graph.")
         #cgraph.profile.print_summary()
@@ -141,6 +128,7 @@ class RNN():
     Loss:
     '''
 
+    
     def __theano_loss_with_pad(self, Vs, sentence_length, gold):
         Vs  = Vs[:sentence_length]
         gold = gold[:sentence_length, :sentence_length+1]
@@ -199,6 +187,26 @@ class RNN():
     SGD:
     '''
 
+    def build_single_gradient_graph(self):
+        print("Building gradient graph...")
+        
+        V = T.matrix('V')
+        L = T.iscalar('L')
+        G = T.dmatrix('G')
+
+        theano_weight_list = self.get_theano_weight_list()
+
+        loss = self.theano_sentence_loss(V, L, G)
+        grads = T.grad(loss, theano_weight_list)
+
+        input_list = [V, L, G] + list(theano_weight_list)
+        cgraph = theano.function(inputs=input_list, outputs=grads, mode='FAST_RUN')
+        
+        print("Done building graph")
+
+        return cgraph
+        
+    
     def build_sgd_graph(self, saved_graph=None):
         if saved_graph is not None:
             exists = os.path.isfile(saved_graph)
@@ -212,7 +220,6 @@ class RNN():
         Ls = T.ivector('Ls')
         Gs = T.dtensor3('Gs')
 
-        
         theano_weight_list = self.get_theano_weight_list()
 
         loss = self.theano_batch_loss(Vs, Ls, Gs)
@@ -230,20 +237,14 @@ class RNN():
 
     
     def train(self, sentences, labels):
-        if self.loss_graph is None:
-            self.loss_graph = self.build_loss_graph()
 
-        if self.sgd_graph is None:
-            self.sgd_graph = self.build_sgd_graph()
+        longest_sentence = max([len(x) for x  in sentences])
+        self.max_words = longest_sentence
 
-        optimizer = optimizers.RMSProp(self, 64, 0.9, 0.005, True)
+        self.optimizer.set_training_data(sentences, labels)
+        self.optimizer.set_development_data(sentences, labels)
 
-        lengths = np.array([len(s) for s in sentences])
-        lengths = lengths.astype(np.int32)
-        sentences = self.pad_sentences(sentences)
-        labels = self.pad_golds(labels)
-
-        optimizer.update(sentences, lengths, labels)
+        self.optimizer.update()
 
 
 

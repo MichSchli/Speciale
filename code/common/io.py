@@ -73,7 +73,20 @@ def read_features(filename):
         sentences = sentences[:-1]
         
     return sentences    
-                
+
+
+def read_config_file(filename):
+    infile = open(filename, 'r+')
+
+    config = {}
+    for line in infile:
+        if line.strip():
+            parts = line.strip().split(':')
+            config[parts[0].strip()] = parts[1].strip()
+
+    return config
+
+
 def write_conll_sentences(sentences, filename):
     ofile = open(filename, 'w+')
 
@@ -82,6 +95,5 @@ def write_conll_sentences(sentences, filename):
         print('', file=ofile)
 
     __write_conll_sentence(sentence, ofile)
-    
-    
+        
     ofile.close()
