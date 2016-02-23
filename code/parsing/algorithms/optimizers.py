@@ -40,7 +40,7 @@ class Optimizer():
         
 class MinibatchOptimizer(Optimizer):
 
-    max_iterations = 100
+    max_iterations = 10
     error_margin = 0.0000001
     normalize_batches = True
     gradient_clipping_factor = 15
@@ -61,7 +61,7 @@ class MinibatchOptimizer(Optimizer):
         return np.array([l[i:i+self.batch_size] for i in range(0, len(l), self.batch_size)])
         
     def update(self, sentences, lengths, labels):
-        self.current_iteration = 35
+        self.current_iteration = 1
         
         length_chunks = self.chunk(lengths)
         sentence_chunks = self.chunk(sentences)

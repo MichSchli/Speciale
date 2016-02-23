@@ -110,6 +110,7 @@ class RNN():
         cgraph = theano.function(inputs=input_list, on_unused_input='warn', outputs=result)
 
         print("Done building graph.")
+        #cgraph.profile.print_summary()
 
         if saved_graph is not None:
             self.save_graph(cgraph, saved_graph)
@@ -150,7 +151,7 @@ class RNN():
         losses, __ = theano.scan(fn=self.__theano_loss_with_pad,
                                 outputs_info=None,
                                 sequences=[Vs,sentence_lengths, Gs],
-                                 non_sequences=None)
+                                non_sequences=None)
 
         return T.sum(losses)
 
@@ -172,9 +173,10 @@ class RNN():
         result = self.theano_batch_loss(Vs, Ls, Gs)
 
         input_list = [Vs, Ls, Gs] + list(weight_list)
-        cgraph = theano.function(inputs=input_list, on_unused_input='warn', outputs=result)
+        cgraph = theano.function(inputs=input_list, on_unused_input='warn', outputs=result) #, profile=True)
 
         print("Done building graph.")
+        #cgraph.profile.print_summary()
         
         if saved_graph is not None:
             self.save_graph(cgraph, saved_graph)
@@ -228,12 +230,11 @@ class RNN():
 
     
     def train(self, sentences, labels):
+        if self.loss_graph is None:
+            self.loss_graph = self.build_loss_graph()
 
         if self.sgd_graph is None:
             self.sgd_graph = self.build_sgd_graph()
-
-        if self.loss_graph is None:
-            self.loss_graph = self.build_loss_graph()
 
         optimizer = optimizers.RMSProp(self, 64, 0.9, 0.005, True)
 

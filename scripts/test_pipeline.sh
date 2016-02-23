@@ -30,7 +30,7 @@ python code/parsing/predict.py --features $FEATURE_FILE --sentences $GRAPH_FILE 
 python code/decoding/decode.py --infile $OUTPUT_FILE --outfile $TEST_FILE --verbose
 
 echo ""
-echo "LAS:"
+echo "UAS:"
 
 #Evaluate
 python code/evaluation/score.py --gold $INPUT_FILE --prediction $TEST_FILE

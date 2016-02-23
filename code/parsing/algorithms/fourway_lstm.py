@@ -79,7 +79,7 @@ def fit(features, labels, model_path=None):
     
 def predict(features, model_path=None):
     model = FourwayLstm()
-    model.load(model_path)
+    #model.load(model_path)
 
     predictions = model.batch_predict(features)
     
