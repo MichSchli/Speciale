@@ -13,10 +13,8 @@ class FourwayLstm(superclass.RNN):
     Fields:
     '''
 
-    hidden_dimension = 10
-    input_dimension = 50
-
-    error_margin = 0.000001
+    hidden_dimension = 16
+    input_dimension = 64
     
     '''
     Initialization:

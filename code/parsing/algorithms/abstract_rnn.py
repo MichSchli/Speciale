@@ -235,7 +235,7 @@ class RNN():
         if self.loss_graph is None:
             self.loss_graph = self.build_loss_graph()
 
-        optimizer = optimizers.RMSProp(self, 64, 0.9, 0.001, True)
+        optimizer = optimizers.RMSProp(self, 64, 0.9, 0.005, True)
 
         lengths = np.array([len(s) for s in sentences])
         lengths = lengths.astype(np.int32)

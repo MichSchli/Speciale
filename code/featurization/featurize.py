@@ -16,7 +16,7 @@ features = []
 
 pos_dict = {tag:idx for idx, tag in enumerate(definitions.stanford_pos)}
 
-embedding_model = embeddings.GloveReader()
+embedding_model = embeddings.PolyglotReader()
 def __featurize_token(token):
     global embedding_model
     global pos_dict
