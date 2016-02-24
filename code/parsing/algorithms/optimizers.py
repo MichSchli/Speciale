@@ -141,7 +141,7 @@ class MinibatchOptimizer(Optimizer):
             print('')
             self.do_update()
 
-            current_loss = self.loss_function(sentences, lengths, labels, *self.weights)
+            current_loss = self.development_loss()
 
 
 class StochasticGradientDescent(MinibatchOptimizer):

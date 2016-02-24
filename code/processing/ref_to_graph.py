@@ -17,4 +17,5 @@ for sentence in sentences:
         head = token['dependency_head_id']
         token['dependency_graph'] = [1.0 if i == head else 0.0 for i in range(token_count + 1)]
 
+
 io.write_conll_sentences(sentences, args.outfile)

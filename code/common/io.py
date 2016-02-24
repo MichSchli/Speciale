@@ -32,7 +32,7 @@ def read_conll_sentences(filename):
 
     while sentences[-1] == []:
         sentences = sentences[:-1]
-        
+
     return sentences
 
 
@@ -71,7 +71,7 @@ def read_features(filename):
 
     while sentences[-1] == []:
         sentences = sentences[:-1]
-        
+
     return sentences    
 
 
@@ -94,6 +94,6 @@ def write_conll_sentences(sentences, filename):
         __write_conll_sentence(sentence, ofile)
         print('', file=ofile)
 
-    __write_conll_sentence(sentence, ofile)
+    __write_conll_sentence(sentences[-1], ofile)
         
     ofile.close()
