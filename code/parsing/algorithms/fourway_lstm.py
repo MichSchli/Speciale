@@ -22,11 +22,11 @@ class FourwayLstm(superclass.RNN):
     '''
 
     def __init__(self, optimizer_config_path):        
-        #self.first_lstm_layer = network_ops.fourdirectional_lstm_layer('first_layer', self.input_dimension * 2, self.hidden_dimension)
-        #self.second_lstm_layer = network_ops.fourdirectional_lstm_layer('second_layer', self.hidden_dimension * 4, self.hidden_dimension)
-        self.output_convolution = network_ops.linear_tensor_convolution_layer('output_layer', self.input_dimension * 2, 1)
+        self.first_lstm_layer = network_ops.fourdirectional_lstm_layer('first_layer', self.input_dimension * 2, self.hidden_dimension)
+        self.second_lstm_layer = network_ops.fourdirectional_lstm_layer('second_layer', self.hidden_dimension * 4, self.hidden_dimension)
+        self.output_convolution = network_ops.linear_tensor_convolution_layer('output_layer', self.hidden_dimension * 4, 1)
         
-        self.layers = [self.output_convolution]
+        self.layers = [self.first_lstm_layer, self.second_lstm_layer, self.output_convolution]
 
         super().__init__(optimizer_config_path)
 
@@ -73,18 +73,18 @@ class FourwayLstm(superclass.RNN):
         return T.nnet.softmax(final_matrix)
 
     
-def fit(features, labels, model_path=None):
+def fit(features, labels, dev_features, dev_labels, model_path=None):
 
     optimizer_config_path = 'fourway_optimizer.config'    
     model = FourwayLstm(optimizer_config_path)
     #model.load(model_path)
 
     model.save_path = model_path
-    model.train(features, labels)
+    model.train(features, labels, dev_features, dev_labels)
     
 def predict(features, model_path=None):
     model = FourwayLstm(None)
-    #model.load(model_path)
+    model.load(model_path)
 
     predictions = model.batch_predict(features)
     

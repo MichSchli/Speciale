@@ -5,6 +5,8 @@ import numpy as np
 parser = argparse.ArgumentParser(description="Parse a file using a stored model.")
 parser.add_argument("--features", help="Input filepath (CoNLL format).", required=True)
 parser.add_argument("--sentences", help="Input filepath (CoNLL format).", required=True)
+parser.add_argument("--dev_features", help="Development feature filepath (CoNLL format).", required=True)
+parser.add_argument("--dev_sentences", help="Development sentence filepath (CoNLL format).", required=True)
 parser.add_argument("--model_path", help="Model path.", required=True)
 parser.add_argument("--algorithm", help="Chosen algorithm.", required=True)
 args = parser.parse_args()
@@ -16,4 +18,8 @@ features = io.read_features(args.features)
 sentences = io.read_conll_sentences(args.sentences)
 labels = [[token['dependency_graph'] for token in sentence] for sentence in sentences]
 
-algorithm.fit(features, labels, model_path=args.model_path)
+dev_features = io.read_features(args.dev_features)
+dev_sentences = io.read_conll_sentences(args.dev_sentences)
+dev_labels = [[token['dependency_graph'] for token in sentence] for sentence in dev_sentences]
+
+algorithm.fit(features, labels, dev_features, dev_labels, model_path=args.model_path)

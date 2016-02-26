@@ -52,6 +52,32 @@ class RNN():
             layer.update_weights(update_list[prev_count:current_count])
             prev_count = current_count
 
+
+    '''
+    Padding:
+    '''
+
+    #TODO: Get rid of these
+    def pad_sentences(self, sentence_list):
+        longest_sentence = max([len(x) for x  in sentence_list])
+        self.max_words = longest_sentence
+        new_sentences = np.zeros((len(sentence_list), longest_sentence, len(sentence_list[0][0])))
+
+        for i, sentence in enumerate(sentence_list):
+            new_sentences[i, :len(sentence), :] = sentence
+
+        return new_sentences
+
+    def pad_golds(self, sentence_labels):
+        longest_sentence = max([len(x) for x  in sentence_labels])
+        new_labels = np.zeros((len(sentence_labels), longest_sentence, longest_sentence+1))
+
+        for i, sentence in enumerate(sentence_labels):
+            for j,label in enumerate(sentence):
+                new_labels[i,j,:label.shape[0]] = label
+
+        return np.array(new_labels)
+
     
     '''
     Prediction
@@ -182,6 +208,7 @@ class RNN():
 
         return res
 
+    
             
     '''
     SGD:
@@ -236,13 +263,13 @@ class RNN():
         return cgraph
 
     
-    def train(self, sentences, labels):
+    def train(self, sentences, labels, dev_sentences, dev_labels):
 
         longest_sentence = max([len(x) for x  in sentences])
         self.max_words = longest_sentence
 
         self.optimizer.set_training_data(sentences, labels)
-        self.optimizer.set_development_data(sentences, labels)
+        self.optimizer.set_development_data(dev_sentences, dev_labels)
 
         self.optimizer.update()
 
