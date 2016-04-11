@@ -16,7 +16,7 @@ algorithm = imp.load_source('io', 'code/parsing/algorithms/'+args.algorithm+'.py
 features = io.read_features(args.features)
 sentences = io.read_conll_sentences(args.sentences)
 
-labels = algorithm.predict(features, model_path=args.model_path)
+labels = algorithm.predict(features, sentences, model_path=args.model_path)
 
 for sentence, label in zip(sentences, labels):
     for token, l in zip(sentence, label):

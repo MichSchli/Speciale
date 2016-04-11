@@ -3,6 +3,9 @@ import numpy as np
 
 class Optimizer():
 
+    training_sentences = {}
+    development_sentences = {}
+    
     gradient_clipping_factor = None
     use_gradient_noise = False
     gradient_noise_eta = None
@@ -27,19 +30,66 @@ class Optimizer():
         self.update_function(self.weights)
         
     def set_training_data(self, sentences, labels):
-        self.training_sentences = sentences
         self.training_labels = labels
-        self.training_lengths = np.array([len(sentence) for sentence in sentences])
-        self.training_lengths = self.training_lengths.astype(np.int32)
+            
+        if 'character' in sentences:       
+            self.training_sentences['character'] = self.pad_words(sentences['character'])
+          
+            self.training_word_lengths = [np.zeros(len(sentence)) for sentence in sentences['character']]
+
+            for i,sentence in enumerate(sentences['character']):
+                for j,word in enumerate(sentence):
+                    self.training_word_lengths[i][j] = len(word)
+
+                self.training_word_lengths[i] = self.training_word_lengths[i].astype(np.int32)
+
+        if 'sentence' in sentences:       
+            self.training_sentences['sentence'] = sentences['sentence']
+
+
 
     def set_development_data(self, sentences, labels):
-        self.development_sentences = self.pad_sentences(sentences)
-        self.development_labels = self.pad_golds(labels)
-        self.development_lengths = np.array([len(sentence) for sentence in sentences])
-        self.development_lengths = self.development_lengths.astype(np.int32)
-    
+        self.development_labels = labels
+            
+        if 'character' in sentences:       
+            self.development_sentences['character'] = self.pad_words(sentences['character'])
+          
+            self.development_word_lengths = [np.zeros(len(sentence)) for sentence in sentences['character']]
+
+            for i,sentence in enumerate(sentences['character']):
+                for j,word in enumerate(sentence):
+                    self.development_word_lengths[i][j] = len(word)
+
+                self.development_word_lengths[i] = self.development_word_lengths[i].astype(np.int32)
+
+        if 'sentence' in sentences:       
+            self.development_sentences['sentence'] = sentences['sentence']
+
+
+        
     def development_loss(self):
-        return self.loss_function(self.development_sentences, self.development_lengths, self.development_labels, *self.weights)
+        loss = 0
+
+        if not 'character' in self.development_sentences:
+            for sentence, label in zip(self.development_sentences['sentence'],
+                                       self.development_labels):
+                loss += self.loss_function(sentence, label, *self.weights)
+                
+
+        elif not 'sentence' in self.development_sentences:
+            for chars, word_lengths, label in zip(self.development_sentences['character'],
+                                                  self.development_word_lengths,
+                                                  self.development_labels):
+                loss += self.loss_function(chars, word_lengths, label, *self.weights)
+
+        else:
+            for sentence, chars, word_lengths, label in zip(self.development_sentences['sentence'],
+                                                            self.development_sentences['character'],
+                                                            self.development_word_lengths,
+                                                            self.development_labels):
+                loss += self.loss_function(sentence, chars, word_lengths, label, *self.weights)
+        
+        return loss
     
     def process_gradients(self, gradients):
         if self.use_gradient_noise:
@@ -58,26 +108,20 @@ class Optimizer():
     '''
     Padding:
     '''
-        
-    def pad_sentences(self, sentence_list):
-        longest_sentence = max([len(x) for x  in sentence_list])        
-        new_sentences = np.zeros((len(sentence_list), longest_sentence, len(sentence_list[0][0])))
 
-        for i, sentence in enumerate(sentence_list):
-            new_sentences[i, :len(sentence), :] = sentence
+    def pad_words(self, sentence_list):
+        l = []
+        for sentence in sentence_list:
+            longest_word = max([len(x) for x in sentence])
+            new_sentence = np.zeros((len(sentence), longest_word, len(sentence[0][0])))
 
-        return new_sentences
+            for i, word in enumerate(sentence):
+                new_sentence[i, :len(word), :] = np.array(word)
 
-    def pad_golds(self, sentence_labels):
-        longest_sentence = max([len(x) for x  in sentence_labels])
-        new_labels = np.zeros((len(sentence_labels), longest_sentence, longest_sentence+1))
+            l.append(new_sentence)
 
-        for i, sentence in enumerate(sentence_labels):
-            for j,label in enumerate(sentence):
-                new_labels[i,j,:label.shape[0]] = label
-
-        return np.array(new_labels)
-
+        return l
+            
     
 class MinibatchOptimizer(Optimizer):
 
@@ -93,13 +137,13 @@ class MinibatchOptimizer(Optimizer):
 
         super().initialize()
                         
-    def batch_gradients(self, data_batch, length_batch, label_batch):
+    def batch_gradients(self, data_batch, word_length_batch, label_batch):
         aggregate = None
-        for sentence, length, gold in zip(data_batch, length_batch, label_batch):
+        for sentence, word_lengths, gold in zip(data_batch, word_length_batch, label_batch):
             if aggregate is None:
-                aggregate = self.gradient_function(sentence, length, gold, *self.weights)
+                aggregate = self.gradient_function(sentence, word_lengths, gold, *self.weights)
             else:
-                new_g = self.gradient_function(sentence, length, gold, *self.weights)
+                new_g = self.gradient_function(sentence, word_lengths, gold, *self.weights)
                 aggregate = [aggregate[i] + new_g[i] for i in range(len(new_g))]
 
         return aggregate
@@ -118,8 +162,13 @@ class MinibatchOptimizer(Optimizer):
     def update(self):
         self.current_iteration = 1
         
-        length_chunks = self.chunk(self.training_lengths)
-        sentence_chunks = self.chunk(self.training_sentences)
+        if 'sentence' in self.training_sentences:
+            sentence_chunks = self.chunk(self.training_sentences['sentence'])
+
+        if 'character' in self.training_sentences:
+            character_chunks = self.chunk(self.training_sentences['character'])
+            word_length_chunks = self.chunk(self.training_word_lengths)
+
         label_chunks = self.chunk(self.training_labels)
 
         current_loss = self.development_loss()
@@ -131,12 +180,36 @@ class MinibatchOptimizer(Optimizer):
             prev_loss = current_loss
             print("Running optimizer at iteration "+str(self.current_iteration)+". Current loss: "+str(prev_loss))
             self.current_iteration += 1
-            
-            for data_batch, length_batch, label_batch in zip(sentence_chunks, length_chunks, label_chunks):
-                self.batch_update(data_batch, length_batch, label_batch)
 
-                for i, update in enumerate(self.updates):
-                    self.weights[i] += self.updates[i]
+            if not 'sentence' in self.training_sentences:
+                for data_batch, word_length_batch, label_batch in zip(character_chunks,
+                                                                      word_length_chunks,
+                                                                      label_chunks):
+                    self.batch_update(data_batch, length_batch, word_length_batch, label_batch)
+
+                    for i, update in enumerate(self.updates):
+                        self.weights[i] += self.updates[i]
+
+
+            if not 'character' in self.training_sentences:
+                for data_batch, word_length_batch, label_batch in zip(sentence_chunks,
+                                                                      word_length_chunks,
+                                                                      label_chunks):
+                    self.batch_update(data_batch, label_batch)
+
+                    for i, update in enumerate(self.updates):
+                        self.weights[i] += self.updates[i]
+
+            else:
+                for data_batch, char_batch, word_length_batch, label_batch in zip(sentence_chunks,
+                                                                                  character_chunks,
+                                                                                  word_length_chunks,
+                                                                                  label_chunks):
+                    self.batch_update(data_batch, char_batch, word_length_batch, label_batch)
+
+                    for i, update in enumerate(self.updates):
+                        self.weights[i] += self.updates[i]
+
 
             print('')
             self.do_update()
@@ -151,9 +224,21 @@ class StochasticGradientDescent(MinibatchOptimizer):
             raise Exception("Optimizer not fully specified in config file!")
 
         super().initialize()
+
+    def batch_update(self, data_batch, label_batch):
+        gradients = self.gradient_function(data_batch, label_batch, *self.weights)
+        self.__update_from_gradients(gradients)
+    
+    def batch_update(self, data_batch, word_length_batch, label_batch):
+        gradients = self.gradient_function(data_batch, word_length_batch, label_batch, *self.weights)
+        self.__update_from_gradients(gradients)
+
+    def batch_update(self, data_batch, char_batch, word_length_batch, label_batch):
+        gradients = self.gradient_function(data_batch, char_batch, word_length_batch, label_batch, *self.weights)
+        self.__update_from_gradients(gradients)
+
         
-    def batch_update(self, data_batch, length_batch, label_batch):
-        gradients = self.gradient_function(data_batch, length_batch, label_batch, *self.weights)
+    def __update_from_gradients(self, gradients):
         gradients = self.process_gradients(gradients)
         
         for i, gradient in enumerate(gradients):
@@ -176,12 +261,22 @@ class AdaDelta(MinibatchOptimizer):
         super().initialize()
         
         self.running_average = [np.zeros_like(weight) for weight in self.weights]
-        
-        
-    def batch_update(self, data_batch, length_batch, label_batch):
-        gradients = self.batch_gradients(data_batch, length_batch, label_batch)
-        gradients = self.process_gradients(gradients)
 
+
+    def batch_update(self, data_batch, label_batch):
+        gradients = self.gradient_function(data_batch, label_batch, *self.weights)
+        self.__update_from_gradients(gradients)
+    
+    def batch_update(self, data_batch, word_length_batch, label_batch):
+        gradients = self.gradient_function(data_batch, word_length_batch, label_batch, *self.weights)
+        self.__update_from_gradients(gradients)
+
+    def batch_update(self, data_batch, char_batch, word_length_batch, label_batch):
+        gradients = self.gradient_function(data_batch, char_batch, word_length_batch, label_batch, *self.weights)
+        self.__update_from_gradients(gradients)
+
+        
+    def __update_from_gradients(self, gradients):
         for i, gradient in enumerate(gradients):
             square_gradient = np.square(gradient)
             self.running_average[i] = self.decay_rate * self.running_average[i] + (1 - self.decay_rate) * square_gradient
@@ -210,12 +305,22 @@ class RMSProp(MinibatchOptimizer):
         super().initialize()
         
         self.running_average = [np.zeros_like(weight) for weight in self.weights]
+
+
+    def batch_update(self, data_batch, label_batch):
+        gradients = self.gradient_function(data_batch, label_batch, *self.weights)
+        self.__update_from_gradients(gradients)
+    
+    def batch_update(self, data_batch, word_length_batch, label_batch):
+        gradients = self.gradient_function(data_batch, word_length_batch, label_batch, *self.weights)
+        self.__update_from_gradients(gradients)
+
+    def batch_update(self, data_batch, char_batch, word_length_batch, label_batch):
+        gradients = self.gradient_function(data_batch, char_batch, word_length_batch, label_batch, *self.weights)
+        self.__update_from_gradients(gradients)
+
         
-        
-    def batch_update(self, data_batch, length_batch, label_batch):
-        gradients = self.batch_gradients(data_batch, length_batch, label_batch)
-        gradients = self.process_gradients(gradients)
-            
+    def __update_from_gradients(self, gradients):
         for i, gradient in enumerate(gradients):
             square_gradient = np.square(gradient)
             self.running_average[i] = self.decay_rate * self.running_average[i] + (1 - self.decay_rate) * square_gradient

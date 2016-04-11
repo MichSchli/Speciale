@@ -14,8 +14,10 @@ io = imp.load_source('io', 'code/common/io.py')
 class RNN():
 
     predict_graph = None
+    optimizer = None
     
-    def __init__(self, optimizer_config_path):
+    def __init__(self, feature_mode, optimizer_config_path):
+        self.feature_mode = feature_mode
         if optimizer_config_path is not None:
             self.optimizer = optimizers.from_config(io.read_config_file(optimizer_config_path))
 
@@ -52,163 +54,73 @@ class RNN():
             layer.update_weights(update_list[prev_count:current_count])
             prev_count = current_count
 
-
-    '''
-    Padding:
-    '''
-
-    #TODO: Get rid of these
-    def pad_sentences(self, sentence_list):
-        longest_sentence = max([len(x) for x  in sentence_list])
-        self.max_words = longest_sentence
-        new_sentences = np.zeros((len(sentence_list), longest_sentence, len(sentence_list[0][0])))
-
-        for i, sentence in enumerate(sentence_list):
-            new_sentences[i, :len(sentence), :] = sentence
-
-        return new_sentences
-
-    def pad_golds(self, sentence_labels):
-        longest_sentence = max([len(x) for x  in sentence_labels])
-        new_labels = np.zeros((len(sentence_labels), longest_sentence, longest_sentence+1))
-
-        for i, sentence in enumerate(sentence_labels):
-            for j,label in enumerate(sentence):
-                new_labels[i,j,:label.shape[0]] = label
-
-        return np.array(new_labels)
-
     
     '''
     Prediction
     '''
-
-    def __theano_predict_with_pad(self, Vs, sentence_length):
-        Vs = Vs[:sentence_length]
-        preds = self.theano_sentence_prediction(Vs, sentence_length)
-
-        pad1 = T.zeros((sentence_length, self.max_words - sentence_length))
-        pad2 = T.zeros((self.max_words - sentence_length, self.max_words + 1))
-
-        padded_result = T.concatenate((preds, pad1), axis=1)
-        padded_result = T.concatenate((padded_result, pad2), axis=0)        
-
-        return padded_result
-
-    
-    def theano_batch_prediction(self, Vs, sentence_lengths):
-        preds, __ = theano.scan(fn=self.__theano_predict_with_pad,
-                                outputs_info=None,
-                                sequences=[Vs,sentence_lengths],
-                                non_sequences=None)
-
-        return preds
-
     
     def build_predict_graph(self, saved_graph=None):
-        if saved_graph is not None:
-            exists = os.path.isfile(saved_graph)
-            if exists:
-                print("Loading graph...")
-                return self.load_graph(saved_graph)
-
         print("Building prediction graph...")
-        Vs = T.dtensor3('Vs')
-        Ls = T.ivector('Ls')
-        weight_list = self.get_theano_weight_list()
+
+        for l in self.layers:
+            l.set_training(False)
         
-        result = self.theano_batch_prediction(Vs, Ls)
-        input_list = [Vs, Ls] + list(weight_list)
+        Sentence = T.matrix('Sentence')
+        Characters = T.dtensor3('Characters')
+        WordLengths = T.ivector('WordLengths')
+        
+        weight_list = self.get_theano_weight_list()
+
+        if self.feature_mode == 'character':
+            result = self.theano_sentence_prediction(Characters, WordLengths)
+            input_list = [Characters, WordLengths] + list(weight_list)
+        elif self.feature_mode == 'sentence':
+            result = self.theano_sentence_prediction(Sentence)
+            input_list = [Sentence] + list(weight_list)
+        elif self.feature_mode == 'both':
+            result = self.theano_sentence_prediction(Sentence, Characters, WordLengths)
+            input_list = [Sentence, Characters, WordLengths] + list(weight_list)
 
         cgraph = theano.function(inputs=input_list, on_unused_input='warn', outputs=result, mode='FAST_RUN')
 
         print("Done building graph.")
-        #cgraph.profile.print_summary()
 
-        if saved_graph is not None:
-            self.save_graph(cgraph, saved_graph)
-        
         return cgraph
     
-    def batch_predict(self, sentences):
-        lengths = np.array([len(s) for s in sentences])
-        lengths = lengths.astype(np.int32)
-
-        sentences = self.pad_sentences(sentences)
-        
-        if self.predict_graph is None:
-            self.predict_graph = self.build_predict_graph()
-
-        print("Predicting...")
-        weights = self.get_weight_list()
-        res = self.predict_graph(sentences, lengths, *weights)
-
-        out_sentences = []
-        for sentence, length in zip(res, lengths):
-            out_sentences.append(sentence[:length, :length+1])
-
-        return out_sentences
-
             
     '''
     Loss:
     '''
-
-    
-    def __theano_loss_with_pad(self, Vs, sentence_length, gold):
-        Vs  = Vs[:sentence_length]
-        gold = gold[:sentence_length, :sentence_length+1]
-        return self.theano_sentence_loss(Vs, sentence_length, gold)
-
-    
-    def theano_batch_loss(self, Vs, sentence_lengths, Gs):
-        losses, __ = theano.scan(fn=self.__theano_loss_with_pad,
-                                outputs_info=None,
-                                sequences=[Vs,sentence_lengths, Gs],
-                                non_sequences=None)
-
-        return T.sum(losses)
-
     
     def build_loss_graph(self, saved_graph=None):
-        if saved_graph is not None:
-            exists = os.path.isfile(saved_graph)
-            if exists:
-                print("Loading loss graph...")
-                return self.load_graph(saved_graph)
-        
         print("Building loss graph...")
-        Vs = T.dtensor3('Vs')
-        Ls = T.ivector('Ls')
-        Gs = T.tensor3('Gs')
+
+        for l in self.layers:
+            l.set_training(False)
+
+        Sentence = T.matrix('Sentence')
+        Characters = T.dtensor3('Characters')
+        WordLengths = T.ivector('WordLengths')
+        GoldPredictions = T.dmatrix('GoldPredictions')
         
         weight_list = self.get_theano_weight_list()
-         
-        result = self.theano_batch_loss(Vs, Ls, Gs)
 
-        input_list = [Vs, Ls, Gs] + list(weight_list)
-        cgraph = theano.function(inputs=input_list, on_unused_input='warn', outputs=result) #, profile=True)
+        if self.feature_mode == 'character':
+            result = self.theano_sentence_loss(Characters, WordLengths, GoldPredictions)
+            input_list = [Characters, WordLengths, GoldPredictions] + list(weight_list)
+        elif self.feature_mode == 'sentence':
+            result = self.theano_sentence_loss(Sentence, GoldPredictions)
+            input_list = [Sentence, GoldPredictions] + list(weight_list)
+        elif self.feature_mode == 'both':
+            result = self.theano_sentence_loss(Sentence, Characters, WordLengths, GoldPredictions)
+            input_list = [Sentence, Characters, WordLengths, GoldPredictions] + list(weight_list)
+
+        cgraph = theano.function(inputs=input_list, on_unused_input='warn', outputs=result)
 
         print("Done building graph.")
-        #cgraph.profile.print_summary()
-        
-        if saved_graph is not None:
-            self.save_graph(cgraph, saved_graph)
         
         return cgraph
-    
-    def batch_loss(self, sentences, lengths, golds):
 
-        if self.loss_graph is None:
-            self.loss_graph = self.build_loss_graph()
-
-        weights = self.get_weight_list()
-        print("Predicting...")
-        res = self.loss_graph(sentences, lengths, golds, *weights)
-
-        return res
-
-    
             
     '''
     SGD:
@@ -216,52 +128,38 @@ class RNN():
 
     def build_single_gradient_graph(self):
         print("Building gradient graph...")
+
+        for l in self.layers:
+            l.set_training(True)
+
+        Sentence = T.matrix('Sentence')
+        Characters = T.dtensor3('Characters')
+        WordLengths = T.ivector('WordLengths')
+        GoldPredictions = T.dmatrix('GoldPredictions')
         
-        V = T.matrix('V')
-        L = T.iscalar('L')
-        G = T.dmatrix('G')
+        weight_list = self.get_theano_weight_list()
 
-        theano_weight_list = self.get_theano_weight_list()
+        if self.feature_mode == 'character':
+            loss = self.theano_sentence_loss(Characters, WordLengths, GoldPredictions)
+            input_list = [Characters, WordLengths, GoldPredictions] + list(weight_list)
+        elif self.feature_mode == 'sentence':
+            loss = self.theano_sentence_loss(Sentence, GoldPredictions)
+            input_list = [Sentence, GoldPredictions] + list(weight_list)
+        elif self.feature_mode == 'both':
+            loss = self.theano_sentence_loss(Sentence, Characters, WordLengths, GoldPredictions)
+            input_list = [Sentence, Characters, WordLengths, GoldPredictions] + list(weight_list)
+            
+        grads = T.grad(loss, weight_list)
 
-        loss = self.theano_sentence_loss(V, L, G)
-        grads = T.grad(loss, theano_weight_list)
-
-        input_list = [V, L, G] + list(theano_weight_list)
         cgraph = theano.function(inputs=input_list, outputs=grads, mode='FAST_RUN')
         
         print("Done building graph")
 
         return cgraph
         
-    
-    def build_sgd_graph(self, saved_graph=None):
-        if saved_graph is not None:
-            exists = os.path.isfile(saved_graph)
-            if exists:
-                print("Loading gradient graph...")
-                return self.load_graph(saved_graph)
-                    
-        print("Building gradient graph...")
-        
-        Vs = T.dtensor3('Vs')
-        Ls = T.ivector('Ls')
-        Gs = T.dtensor3('Gs')
-
-        theano_weight_list = self.get_theano_weight_list()
-
-        loss = self.theano_batch_loss(Vs, Ls, Gs)
-        grads = T.grad(loss, theano_weight_list)
-
-        input_list = [Vs, Ls, Gs] + list(theano_weight_list)
-        cgraph = theano.function(inputs=input_list, outputs=grads, mode='FAST_RUN')
-        
-        print("Done building graph")
-
-        if saved_graph is not None:
-            self.save_graph(cgraph, saved_graph)
-        
-        return cgraph
-
+    '''
+    Training and prediction:
+    '''
     
     def train(self, sentences, labels, dev_sentences, dev_labels):
 
@@ -306,3 +204,7 @@ class RNN():
         infile.close()
 
         self.update_weights(store_list)
+
+        if self.optimizer is not None:
+            self.optimizer.set_initial_weights(self.get_weight_list())
+

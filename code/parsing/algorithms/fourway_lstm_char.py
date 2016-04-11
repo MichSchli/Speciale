@@ -12,8 +12,16 @@ optimizers = imp.load_source('optimizers', 'code/parsing/algorithms/optimizers.p
 class FourwayLstm(superclass.RNN):
 
     '''
+    Superclass settings:
+    '''
+    use_sentence_features = False
+    use_character_features = True
+    
+    '''
     Fields:
     '''
+    char_hidden_dimension = 320
+    char_input_dimension = 256
 
     hidden_dimension = 64
     input_dimension = 64
@@ -23,13 +31,11 @@ class FourwayLstm(superclass.RNN):
     '''
 
     def __init__(self, optimizer_config_path):
-        n_layers = 3
+        n_layers = 1
 
-        # Idea: Add a nonlinear tanh layer to the input.
-        # Intuition: "Interpret this vector before comparing it to others."
-
-        #For now, linear layer projecting to larger space to match network:
-        self.input_lstm_layer = network_ops.fourdirectional_lstm_layer('input_layer_', self.input_dimension * 2, self.hidden_dimension)
+        self.char_lstm_layer = network_ops.bidirectional_rnn_lstm('input_layer_', self.char_input_dimension, self.char_hidden_dimension)
+        
+        self.input_lstm_layer = network_ops.fourdirectional_lstm_layer('input_layer_', self.char_hidden_dimension * 4, self.hidden_dimension)
 
         self.lstm_layers = [network_ops.fourdirectional_lstm_layer('layer_'+str(l),
                                                               self.hidden_dimension * 4,
@@ -39,9 +45,9 @@ class FourwayLstm(superclass.RNN):
         #self.second_lstm_layer = network_ops.fourdirectional_lstm_layer('second_layer', self.hidden_dimension * 4, self.hidden_dimension)
         self.output_convolution = network_ops.linear_tensor_convolution_layer('output_layer', self.hidden_dimension * 4, 1)
         
-        self.layers = [self.input_lstm_layer] + self.lstm_layers + [self.output_convolution]
+        self.layers = [self.char_lstm_layer, self.input_lstm_layer] + self.lstm_layers + [self.output_convolution]
 
-        super().__init__(optimizer_config_path)
+        super().__init__('character', optimizer_config_path)
 
         
     '''
@@ -54,63 +60,47 @@ class FourwayLstm(superclass.RNN):
                                 non_sequences=V)
         
         #Make root feature:
-        root_features = T.concatenate((V,T.ones(self.input_dimension)))
+        root_features = T.concatenate((V,T.ones(self.char_hidden_dimension*2)))
 
         flat_version = thingy.flatten()
         with_root = T.concatenate((root_features, flat_version))
-        in_shape = T.reshape(with_root, newshape=(sentence_length+1,self.input_dimension*2))
+        in_shape = T.reshape(with_root, newshape=(sentence_length+1,self.char_hidden_dimension*4))
         return in_shape
 
     
    
-    def theano_sentence_loss(self, Vs, sentence_length, gold):
-        preds = self.theano_sentence_prediction(Vs, sentence_length)
+    def theano_sentence_loss(self, Vs, word_lengths, gold):
+        preds = self.theano_sentence_prediction(Vs, word_lengths)
         losses = T.nnet.categorical_crossentropy(preds, gold)
         return T.sum(losses)
 
+    def char_lstm_with_pad(self, V, word_length):
+        V = V[:word_length]
+        return self.char_lstm_layer.function(V)
     
-    def theano_sentence_prediction(self, Vs, sentence_length):
+    def theano_sentence_prediction(self, Vs, word_lengths):
 
+        input_lstm_res, _ = theano.scan(fn=self.char_lstm_with_pad,
+                                        outputs_info=None,
+                                        sequences=[Vs, word_lengths],
+                                        non_sequences=None)
+        
         #Make pairwise features. This is really just "tensor product with concatenation instead of multiplication". Is there a command for that?
         pairwise_vs, _ = theano.scan(fn=self.__pairwise_features,
                                   outputs_info=None,
-                                  sequences=Vs,
-                                  non_sequences=[Vs, sentence_length])
-
+                                  sequences=input_lstm_res,
+                                  non_sequences=[input_lstm_res, Vs.shape[0]])
         
-        if self.input_lstm_layer.training:
-            srng = RandomStreams(seed=12345)
-            #pairwise_vs = T.switch(srng.binomial(size=(sentence_length, sentence_length+1, self.input_dimension*2), p=0.5), pairwise_vs, 0)
-        #else:
-        #    pairwise_vs = 0.5*pairwise_vs
-        #
         
         full_matrix = self.input_lstm_layer.function(pairwise_vs)
 
-        for layer in self.lstm_layers:
-            
-            if self.input_lstm_layer.training:
-                print("hah-train")
-                full_matrix = T.switch(srng.binomial(size=(sentence_length, sentence_length+1, self.hidden_dimension*4), p=0.5), full_matrix, 0)
-            else:
-                print("heh-notrain")
-                full_matrix = 0.5 * full_matrix
-            
-            
+        for layer in self.lstm_layers:    
             full_matrix = layer.function(full_matrix)
 
-        '''
-        if self.input_lstm_layer.training:
-            full_matrix = T.switch(srng.binomial(size=(sentence_length, sentence_length+1, self.hidden_dimension*4), p=0.5), full_matrix, 0)
-        else:
-            full_matrix = 0.5 * full_matrix
-        '''
-        
         final_matrix = self.output_convolution.function(full_matrix)
 
         return T.nnet.softmax(final_matrix)
 
-    
 
 def fit(features, labels, dev_features, dev_labels, model_path=None):
     optimizer_config_path = 'fourway_optimizer.config'    
@@ -119,7 +109,7 @@ def fit(features, labels, dev_features, dev_labels, model_path=None):
 
     model.save_path = model_path
     model.train(features, labels, dev_features, dev_labels)
-        
+    
 def predict(features, sentences, model_path=None):
     model = FourwayLstm(None)
     model.load(model_path)

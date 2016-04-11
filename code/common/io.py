@@ -46,8 +46,9 @@ def __write_conll_sentence(sentence, ofile):
 def __write_feature_sentence(sentence, ofile):
     for token in sentence:
         print('\t'.join([str(f) for f in token]), file=ofile)
+
         
-def write_features(sentences, filename):
+def write_sentence_features(sentences, filename):
     ofile = open(filename, 'w+')
 
     for sentence in sentences[:-1]:
@@ -57,7 +58,40 @@ def write_features(sentences, filename):
     __write_feature_sentence(sentences[-1], ofile)
     ofile.close()
 
-def read_features(filename):
+def __write_characters(sentence, ofile):
+    for token in sentence:
+        print('\t'.join([' '.join([str(f) for f in t]) for t in token]), file=ofile)
+    
+def write_character_features(sentences, filename):
+    ofile = open(filename, 'w+')
+
+    for sentence in sentences[:-1]:
+        __write_characters(sentence, ofile)
+        print('', file=ofile)
+
+    __write_characters(sentences[-1], ofile)
+    ofile.close()
+
+
+def read_character_features(filename):
+    sentences = [[]]
+    for line in open(filename, 'r+'):
+        stripped = line.strip()
+
+        if stripped:
+            token_list = [[float(c) for c in f.split(' ')] for f in stripped.split('\t')]
+            feature  = np.array(token_list)
+            sentences[-1].append(feature)
+        else:
+            sentences.append([])
+
+    while sentences[-1] == []:
+        sentences = sentences[:-1]
+
+    return sentences    
+
+    
+def read_sentence_features(filename):
     sentences = [[]]
     for line in open(filename, 'r+'):
         stripped = line.strip()

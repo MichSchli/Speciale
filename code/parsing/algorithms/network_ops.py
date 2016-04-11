@@ -2,8 +2,9 @@ from theano import tensor as T
 import theano
 import numpy as np
 
-
 class single_lstm(): 
+
+    training=False
     
     def __init__(self, name, input_neurons, output_neurons):
         self.input_neurons=input_neurons
@@ -31,6 +32,8 @@ class single_lstm():
         #Initialize forget bias to one:
         self.W_forget[-1] = np.ones_like(self.W_forget[-1])
 
+    def set_training(self, training):
+        self.training=training
 
     def update_weights(self, update_list):
         self.W_forget = update_list[0]
@@ -50,7 +53,7 @@ class single_lstm():
     
     def function(self, x, h_prev, c_prev):
         input_vector = T.concatenate((x, h_prev, [1]))
-
+        
         forget_gate = T.nnet.sigmoid(T.dot(self.W_forget_theano, input_vector))
         input_gate = T.nnet.sigmoid(T.dot(self.W_input_theano, input_vector))
         candidate_vector = T.tanh(T.dot(self.W_candidate_theano, input_vector))
@@ -60,8 +63,128 @@ class single_lstm():
         h = output * T.tanh(cell_state)
         return h, cell_state
     
+    
+class threed_grid_lstm_cell():
 
+    
+    def __init__(self, name, input_shapes, output_shapes):
+        assert(len(input_shapes) == 3)
+        assert(len(output_shapes) == 3)
+        
+        self.input_shapes = input_shapes
+        self.output_shapes = output_shapes
+        self.name = name
+
+        H_shape = sum(self.input_shapes)
+        
+        self.neurons = [None]*len(input_shapes)
+        for i, output_neurons in enumerate(output_shapes):
+            self.neurons[i] = single_lstm(name + '_' + str(i), H_shape, output_neurons)
+    
+    def update_weights(self, update_list):
+        counter = 0
+        for neuron in self.neurons:
+            neuron.update_weights(update_list[counter:counter+neuron.weight_count()])
+            counter += neuron.weight_count()
+
+            
+    def weight_count(self):
+        return sum([neuron.weight_count() for neuron in self.neurons])
+        
+    def get_theano_weights(self):
+        w = fisk
+        for neuron in self.neurons:
+            w += neuron.get_theano_weights()
+            
+    def get_python_weights(self):
+        w = fisk
+        for neuron in self.neurons:
+            w += neuron.get_python_weights()
+        
+    def function(self, x, H, C):
+        h0, c0 = self.neurons[0].function(x, H, C[0])
+        h1, c1 = self.neurons[1].function(x, H, C[1])
+        h2, c2 = self.neurons[2].function(x, H, C[2])
+
+        new_hs = [h0, h1, h2]
+        new_cs = [c0, c1, c2]
+        
+        return new_hs, new_cs
+
+
+class threed_grid_lstm_block():
+
+    def __init__(self, name, input_shapes, output_shapes):
+        assert(input_shapes[1] == output_shapes[1])
+        assert(input_shapes[2] == output_shapes[2])
+        
+        self.name = name
+        self.neuron = threed_grid_lstm_cell(name, input_shapes, output_shapes)
+
+    def update_weights(self, update_list):
+        self.neuron.update_weights(update_list)
+
+    def weight_count(self):
+        return self.neuron.weight_count()
+    
+    def get_theano_weights(self):
+        return self.neuron.get_theano_weights()
+
+    def get_python_weights(self):
+        return self.neuron.get_python_weights()
+        
+    def function(self, input_tensor):
+        def ev(h_below, c_below, h_y_axis, c_y_axis, h_x_axis, c_x_axis):
+            hs, cs = self.neuron.function(h_below, T.conc((h_y_axis, h_x_axis)), (c_below, c_y_axis, c_x_axis))
+
+            return hs[0], cs[0], hs[1], cs[1], hs[2], cs[2]
+
+        def ev_row(hs_prevlayer, cs_prevlayer, hs_prevrow, cs_prevrow):
+            row_init_h = T.zeros(neurons_per_downward_cell) # Number of neurons per cell in the column direction
+            row_init_c = T.zeros(neurons_per_downward_cell)
+            
+            row_eval, _ =  theano.scan(fn=ev,
+                        outputs_info=[None, None, None, None, row_init_h, row_init_c], #Only have h_row and c_row as recurrent
+                        sequences=[hs_prevlayer, cs_prevlayer, hs_prevrow, cs_prevrow], # run along the layer below and "upwards" row
+                        non_sequences=None,
+                        go_backwards=False) # We want to go forward, left to right, for now
+
+            hs_nextlayer = row_eval[0]
+            cs_nextlayer = row_eval[1]
+            hs_nextrow = row_eval[2]
+            cs_nextrow = row_eval[3]
+
+            return hs_nextlayer, cs_nextlayer, hs_nextrow, cs_nextrow
+
+        
+        def ev_layer(htensor3_below, ctensor3_below):
+            layer_eval, _ = theano.scan(fn=ev_row,
+                            outputs_info=[None, None, h0_row, c0_row], #Only have row hs and cs as recurrent
+                            sequences=[htensor3_below, ctensor3_below], #As sequences, we want the h and c rows below
+                            non_sequences=None,
+                            go_backwards=False) #We want to go forwards, up to down, for now
+
+            hs_nextlayer = layer_eval[0]
+            cs_nextlayer = layer_eval[1]
+
+            return hs_nextlayer, cs_nextlayer
+            
+
+        def ev_block(htensor3_input):
+            ctensor3_input = T.zeros_like(htensor3_input)
+
+            self.n_layers = 5
+            final_layer, _ = theano.scan(fn=ev_layer,
+                                         outputs_info=[htensor3_input, ctensor3_input],
+                                         n_steps=self.n_layers)
+
+            return final_layer[0]
+
+        return ev_block(input_tensor)
+    
 class lstm_layer():
+
+    training=False
     
     def __init__(self, name, input_neurons, output_neurons, direction):
         self.input_neurons=input_neurons
@@ -71,6 +194,11 @@ class lstm_layer():
         self.name = name
         self.neuron=single_lstm(name, input_neurons, output_neurons)
 
+    
+    def set_training(self, training):
+        self.training=training
+        self.neuron.set_training(training)
+        
     def update_weights(self, update_list):
         self.neuron.update_weights(update_list)
 
@@ -96,9 +224,10 @@ class lstm_layer():
         # Discard the cell values:
         return lstm_preds[0]
 
+class bidirectional_rnn_lstm():
 
-class bidirectional_lstm_layer():
-
+    training=False
+    
     def __init__(self, name, input_neurons, output_neurons):
         self.input_neurons = input_neurons
         self.output_neurons = output_neurons
@@ -106,7 +235,51 @@ class bidirectional_lstm_layer():
         self.name = name
         self.forward = lstm_layer(name + '_forward', input_neurons, output_neurons, True)
         self.backward = lstm_layer(name + '_backward', input_neurons, output_neurons, False)
+    
+    def set_training(self, training):
+        self.training=training
+        self.forward.set_training(training)
+        self.backward.set_training(training)
+        
+    def update_weights(self, update_list):
+        self.forward.update_weights(update_list[:self.forward.weight_count()])
+        self.backward.update_weights(update_list[self.forward.weight_count():])
 
+    def weight_count(self):
+        return self.forward.weight_count() + self.backward.weight_count()
+        
+    def get_theano_weights(self):
+        return self.forward.get_theano_weights() + self.backward.get_theano_weights()
+
+    def get_python_weights(self):
+        return self.forward.get_python_weights() + self.backward.get_python_weights()
+        
+    
+    def function(self, Vs):
+        
+        forwards_h = self.forward.function(Vs)[-1]
+        backwards_h = self.backward.function(Vs)[-1]
+
+        return T.concatenate((forwards_h, backwards_h))
+
+
+class bidirectional_lstm_layer():
+
+    training=False
+    
+    def __init__(self, name, input_neurons, output_neurons):
+        self.input_neurons = input_neurons
+        self.output_neurons = output_neurons
+
+        self.name = name
+        self.forward = lstm_layer(name + '_forward', input_neurons, output_neurons, True)
+        self.backward = lstm_layer(name + '_backward', input_neurons, output_neurons, False)
+    
+    def set_training(self, training):
+        self.training=training
+        self.forward.set_training(training)
+        self.backward.set_training(training)
+        
     def update_weights(self, update_list):
         self.forward.update_weights(update_list[:self.forward.weight_count()])
         self.backward.update_weights(update_list[self.forward.weight_count():])
@@ -130,6 +303,8 @@ class bidirectional_lstm_layer():
 
     
 class fourdirectional_lstm_layer():
+
+    training=False
     
     def __init__(self, name, input_neurons, output_neurons):
         self.input_neurons = input_neurons
@@ -139,6 +314,12 @@ class fourdirectional_lstm_layer():
         self.sideward_layer = bidirectional_lstm_layer(name + '_sideward', input_neurons, output_neurons)
         self.downward_layer = bidirectional_lstm_layer(name + '_downward', input_neurons, output_neurons)
 
+    
+    def set_training(self, training):
+        self.training=training
+        self.sideward_layer.set_training(training)
+        self.downward_layer.set_training(training)
+        
 
     def update_weights(self, update_list):
         self.sideward_layer.update_weights(update_list[:self.sideward_layer.weight_count()])
@@ -233,6 +414,8 @@ class corner_lstm_layer():
     
 class linear_layer():
 
+    training=False
+    
     def __init__(self, name, input_neurons, output_neurons):
         self.input_neurons = input_neurons
         self.output_neurons = output_neurons
@@ -248,6 +431,8 @@ class linear_layer():
             self.weight_matrix_theano = T.dmatrix(name + '_weight')
             self.weight_matrix = np.random.uniform(low=low_init, high=high_init, size=(self.output_neurons, self.input_neurons+1))
 
+    def set_training(self, training):
+        self.training=training
     
     def update_weights(self, update_list):
         self.weight_matrix = update_list[0]
@@ -268,6 +453,8 @@ class linear_layer():
 
 class linear_tensor_convolution_layer():
 
+    training=False
+    
     def __init__(self, name, input_neurons, output_neurons):
         self.input_neurons = input_neurons
         self.output_neurons = output_neurons
@@ -275,6 +462,10 @@ class linear_tensor_convolution_layer():
         
         self.neuron = linear_layer(name, input_neurons, output_neurons)
 
+    def set_training(self, training):
+        self.training=training
+        self.neuron.set_training(training)
+        
     def update_weights(self, update_list):
         self.neuron.update_weights(update_list)
         
