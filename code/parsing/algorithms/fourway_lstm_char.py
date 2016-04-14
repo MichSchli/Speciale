@@ -33,9 +33,9 @@ class FourwayLstm(superclass.RNN):
     def __init__(self, optimizer_config_path):
         n_layers = 1
 
-        self.char_lstm_layer = network_ops.bidirectional_rnn_lstm('input_layer_', self.char_input_dimension, self.char_hidden_dimension)
+        self.char_lstm_layer = network_ops.bidirectional_rnn_lstm('char_input_layer_', self.char_input_dimension, self.char_hidden_dimension)
         
-        self.input_lstm_layer = network_ops.fourdirectional_lstm_layer('input_layer_', self.char_hidden_dimension * 4, self.hidden_dimension)
+        self.input_lstm_layer = network_ops.fourdirectional_lstm_layer('input_layer_', self.char_hidden_dimension * 2 * 2, self.hidden_dimension)
 
         self.lstm_layers = [network_ops.fourdirectional_lstm_layer('layer_'+str(l),
                                                               self.hidden_dimension * 4,
@@ -66,8 +66,6 @@ class FourwayLstm(superclass.RNN):
         with_root = T.concatenate((root_features, flat_version))
         in_shape = T.reshape(with_root, newshape=(sentence_length+1,self.char_hidden_dimension*4))
         return in_shape
-
-    
    
     def theano_sentence_loss(self, Vs, word_lengths, gold):
         preds = self.theano_sentence_prediction(Vs, word_lengths)
@@ -110,10 +108,10 @@ def fit(features, labels, dev_features, dev_labels, model_path=None):
     model.save_path = model_path
     model.train(features, labels, dev_features, dev_labels)
     
-def predict(features, sentences, model_path=None):
+def predict(features, model_path=None):
     model = FourwayLstm(None)
-    model.load(model_path)
+    #model.load(model_path)
 
-    predictions = model.batch_predict(features)
+    predictions = model.predict(features)
     
     return predictions

@@ -162,16 +162,56 @@ class RNN():
     '''
     
     def train(self, sentences, labels, dev_sentences, dev_labels):
-
-        longest_sentence = max([len(x) for x  in sentences])
-        self.max_words = longest_sentence
-
         self.optimizer.set_training_data(sentences, labels)
         self.optimizer.set_development_data(dev_sentences, dev_labels)
 
         self.optimizer.update()
 
 
+    def pad_words(self, sentence_list):
+        l = []
+        for sentence in sentence_list:
+            longest_word = max([len(x) for x in sentence])
+            new_sentence = np.zeros((len(sentence), longest_word, len(sentence[0][0])))
+
+            for i, word in enumerate(sentence):
+                new_sentence[i, :len(word), :] = np.array(word)
+
+            l.append(new_sentence)
+
+        return l
+
+
+    def predict(self, sentences):
+
+        predict_function = self.build_predict_graph()
+        
+        if 'character' in sentences:       
+            sentences['character'] = self.pad_words(sentences['character'])          
+            word_lengths = [np.zeros(len(sentence)) for sentence in sentences['character']]
+
+            for i,sentence in enumerate(sentences['character']):
+                for j,word in enumerate(sentence):
+                    word_lengths[i][j] = len(word)
+
+                word_lengths[i] = word_lengths[i].astype(np.int32)
+        
+        predictions = []
+        if not 'character' in sentences:
+            for sentence in sentences['sentence']:
+                predictions.append(predict_function(sentence, *self.get_weight_list()))
+                
+        elif not 'sentence' in sentences:
+            for chars, word_length in zip(sentences['character'], word_lengths):
+                predictions.append(predict_function(chars, word_length, *self.get_weight_list()))
+
+        else:
+            for sentence, chars, word_length in zip(sentences['sentence'],
+                                                    sentences['character'],
+                                                    word_lengths):
+                predictions.append(predict_function(sentence, chars, word_length, *self.get_weight_list()))
+
+        return predictions
 
     '''
     Persistence:

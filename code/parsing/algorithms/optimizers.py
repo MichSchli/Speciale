@@ -136,7 +136,18 @@ class MinibatchOptimizer(Optimizer):
             raise Exception("Optimizer not fully specified in config file!")
 
         super().initialize()
-                        
+
+    def batch_gradients(self, data_batch, label_batch):
+        aggregate = None
+        for sentence, gold in zip(data_batch, label_batch):
+            if aggregate is None:
+                aggregate = self.gradient_function(sentence, gold, *self.weights)
+            else:
+                new_g = self.gradient_function(sentence, gold, *self.weights)
+                aggregate = [aggregate[i] + new_g[i] for i in range(len(new_g))]
+
+        return aggregate
+
     def batch_gradients(self, data_batch, word_length_batch, label_batch):
         aggregate = None
         for sentence, word_lengths, gold in zip(data_batch, word_length_batch, label_batch):
@@ -147,7 +158,17 @@ class MinibatchOptimizer(Optimizer):
                 aggregate = [aggregate[i] + new_g[i] for i in range(len(new_g))]
 
         return aggregate
-                
+        
+    def batch_gradients(self, data_batch, char_batch, word_length_batch, label_batch):
+        aggregate = None
+        for sentence, chars, word_lengths, gold in zip(data_batch, char_batch, word_length_batch, label_batch):
+            if aggregate is None:
+                aggregate = self.gradient_function(sentence, chars, word_lengths, gold, *self.weights)
+            else:
+                new_g = self.gradient_function(sentence, chars, word_lengths, gold, *self.weights)
+                aggregate = [aggregate[i] + new_g[i] for i in range(len(new_g))]
+
+        return aggregate
         
     def process_gradients(self, gradients):
         if self.normalize_batches:
@@ -185,16 +206,13 @@ class MinibatchOptimizer(Optimizer):
                 for data_batch, word_length_batch, label_batch in zip(character_chunks,
                                                                       word_length_chunks,
                                                                       label_chunks):
-                    self.batch_update(data_batch, length_batch, word_length_batch, label_batch)
+                    self.batch_update(data_batch, word_length_batch, label_batch)
 
                     for i, update in enumerate(self.updates):
                         self.weights[i] += self.updates[i]
 
-
             if not 'character' in self.training_sentences:
-                for data_batch, word_length_batch, label_batch in zip(sentence_chunks,
-                                                                      word_length_chunks,
-                                                                      label_chunks):
+                for data_batch, label_batch in zip(sentence_chunks, label_chunks):
                     self.batch_update(data_batch, label_batch)
 
                     for i, update in enumerate(self.updates):
@@ -226,15 +244,15 @@ class StochasticGradientDescent(MinibatchOptimizer):
         super().initialize()
 
     def batch_update(self, data_batch, label_batch):
-        gradients = self.gradient_function(data_batch, label_batch, *self.weights)
+        gradients = self.batch_gradients(data_batch, label_batch, *self.weights)
         self.__update_from_gradients(gradients)
     
     def batch_update(self, data_batch, word_length_batch, label_batch):
-        gradients = self.gradient_function(data_batch, word_length_batch, label_batch, *self.weights)
+        gradients = self.batch_gradients(data_batch, word_length_batch, label_batch, *self.weights)
         self.__update_from_gradients(gradients)
 
     def batch_update(self, data_batch, char_batch, word_length_batch, label_batch):
-        gradients = self.gradient_function(data_batch, char_batch, word_length_batch, label_batch, *self.weights)
+        gradients = self.batch_gradients(data_batch, char_batch, word_length_batch, label_batch, *self.weights)
         self.__update_from_gradients(gradients)
 
         
@@ -264,15 +282,15 @@ class AdaDelta(MinibatchOptimizer):
 
 
     def batch_update(self, data_batch, label_batch):
-        gradients = self.gradient_function(data_batch, label_batch, *self.weights)
+        gradients = self.batch_gradients(data_batch, label_batch, *self.weights)
         self.__update_from_gradients(gradients)
     
     def batch_update(self, data_batch, word_length_batch, label_batch):
-        gradients = self.gradient_function(data_batch, word_length_batch, label_batch, *self.weights)
+        gradients = self.batch_gradients(data_batch, word_length_batch, label_batch, *self.weights)
         self.__update_from_gradients(gradients)
 
     def batch_update(self, data_batch, char_batch, word_length_batch, label_batch):
-        gradients = self.gradient_function(data_batch, char_batch, word_length_batch, label_batch, *self.weights)
+        gradients = self.batch_gradients(data_batch, char_batch, word_length_batch, label_batch, *self.weights)
         self.__update_from_gradients(gradients)
 
         
@@ -308,15 +326,15 @@ class RMSProp(MinibatchOptimizer):
 
 
     def batch_update(self, data_batch, label_batch):
-        gradients = self.gradient_function(data_batch, label_batch, *self.weights)
+        gradients = self.batch_gradients(data_batch, label_batch, *self.weights)
         self.__update_from_gradients(gradients)
     
     def batch_update(self, data_batch, word_length_batch, label_batch):
-        gradients = self.gradient_function(data_batch, word_length_batch, label_batch, *self.weights)
+        gradients = self.batch_gradients(data_batch, word_length_batch, label_batch, *self.weights)
         self.__update_from_gradients(gradients)
 
     def batch_update(self, data_batch, char_batch, word_length_batch, label_batch):
-        gradients = self.gradient_function(data_batch, char_batch, word_length_batch, label_batch, *self.weights)
+        gradients = self.batch_gradients(data_batch, char_batch, word_length_batch, label_batch, *self.weights)
         self.__update_from_gradients(gradients)
 
         
