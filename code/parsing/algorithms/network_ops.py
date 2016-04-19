@@ -62,6 +62,82 @@ class single_lstm():
         output = T.nnet.sigmoid(T.dot(self.W_output_theano, input_vector))
         h = output * T.tanh(cell_state)
         return h, cell_state
+
+class multilayer_lstm():
+
+    def __init__(self, name,
+                 input_bottom_neurons,
+                 input_top_neurons,
+                 output_bottom_neurons,
+                 output_top_neurons,
+                 run_forward):
+        
+        self.input_bottom_neurons = input_bottom_neurons
+        self.input_top_neurons = input_top_neurons
+        self.output_bottom_neurons = output_bottom_neurons
+        self.output_top_neurons = output_top_neurons
+        self.run_forward = run_forward
+        self.name = name
+
+        self.bottom_neuron=single_lstm(name, input_bottom_neurons + output_top_neurons, output_bottom_neurons)
+        self.top_neuron=single_lstm(name, input_top_neurons + output_bottom_neurons, output_top_neurons)
+
+    
+    def set_training(self, training):
+        self.training=training
+        self.bottom_neuron.set_training(training)
+        self.top_neuron.set_training(training)
+        
+    def update_weights(self, update_list):
+        self.bottom_neuron.update_weights(update_list[:self.forward.weight_count()])
+        self.top_neuron.update_weights(update_list[self.forward.weight_count():])
+
+    def weight_count(self):
+        return self.bottom_neuron.weight_count() + self.top_neuron.weight_count()
+        
+    def get_theano_weights(self):
+        return self.bottom_neuron.get_theano_weights() + self.top_neuron.get_theano_weights()
+
+    def get_python_weights(self):
+        return self.bottom_neuron.get_python_weights() + self.top_neuron.get_python_weights()
+
+    def call_bottom_neuron(self, BottomFeatureVector, PrevBottomH, PrevBottomC, PrevTopOutputVector):
+        Joint = T.concatenate((PrevTopOutputVector, BottomFeatureVector))
+        return self.bottom_neuron.function(Joint, PrevBottomH, PrevBottomC)
+    
+    def iterate_bottom(self, PrevTopOutputVector, BottomFeatureMatrix, BottomSequenceLength):
+                
+        BottomFeatureMatrix = BottomFeatureMatrix[:BottomSequenceLength]
+
+        h0_bottom = T.zeros(self.output_bottom_neurons)
+        c0_bottom = T.zeros(self.output_bottom_neurons)
+
+        lstm_preds, _ = theano.scan(fn=self.call_bottom_neuron,
+                        sequences=BottomFeatureMatrix,
+                        outputs_info=[h0_bottom,c0_bottom],
+                        non_sequences=PrevTopOutputVector,
+                                    go_backwards=not self.run_forward)
+
+        # Discard everything but the last hidden values:
+        return lstm_preds[0][-1]
+
+    def call_top_neuron(self, BottomFeatureMatrix, BottomSequenceLength, TopFeatureVector, PrevTopH, PrevTopC):
+        PrevBottomOutputVector = self.iterate_bottom(PrevTopH, BottomFeatureMatrix, BottomSequenceLength)
+        Joint = T.concatenate((PrevBottomOutputVector, TopFeatureVector))
+        return self.top_neuron.function(Joint, PrevTopH, PrevTopC)    
+    
+    def function(self, TopFeatureMatrix, BottomFeatureTensor, BottomSequenceVector):
+        h0_top = T.zeros(self.output_top_neurons)
+        c0_top = T.zeros(self.output_top_neurons)
+
+        lstm_preds, _ = theano.scan(fn=self.call_top_neuron,
+                        sequences=[BottomFeatureTensor, BottomSequenceVector, TopFeatureMatrix],
+                        outputs_info=[h0_top,c0_top],
+                        non_sequences=None,
+                                    go_backwards=not self.run_forward)
+
+        # Discard the cell values:
+        return lstm_preds[0]
     
     
 class threed_grid_lstm_cell():

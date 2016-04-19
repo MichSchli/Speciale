@@ -12,12 +12,6 @@ optimizers = imp.load_source('optimizers', 'code/parsing/algorithms/optimizers.p
 class FourwayLstm(superclass.RNN):
 
     '''
-    Superclass settings:
-    '''
-    use_sentence_features = False
-    use_character_features = True
-    
-    '''
     Fields:
     '''
     char_hidden_dimension = 64
@@ -32,18 +26,17 @@ class FourwayLstm(superclass.RNN):
     '''
 
     def __init__(self, optimizer_config_path):
-        n_layers = 2
+        #n_layers = 2
 
-        self.char_lstm_layer = network_ops.bidirectional_rnn_lstm('char_input_layer_', self.char_input_dimension, self.char_hidden_dimension)
-        self.input_lstm_layer = network_ops.fourdirectional_lstm_layer('input_layer_', (self.char_hidden_dimension * 2 + self.sentence_input_dimension) *2, self.hidden_dimension)
+        self.input_lstm_layer = network_ops.multilayer_lstm('input_layer_', self.char_input_dimension, self.char_hidden_dimension, self.sentence_input_dimension, self.hidden_dimension, True)
 
-        self.lstm_layers = [network_ops.fourdirectional_lstm_layer('layer_'+str(l),
-                                                              self.hidden_dimension * 4,
-                                                              self.hidden_dimension) for l in range(n_layers-1)]
+        #self.lstm_layers = [network_ops.fourdirectional_lstm_layer('layer_'+str(l),
+        #                                                      self.hidden_dimension * 4,
+        #                                                      self.hidden_dimension) for l in range(n_layers-1)]
         
-        self.output_convolution = network_ops.linear_tensor_convolution_layer('output_layer', self.hidden_dimension * 4, 1)
+        self.output_convolution = network_ops.linear_tensor_convolution_layer('output_layer', self.hidden_dimension*2, 1)
         
-        self.layers = [self.char_lstm_layer, self.input_lstm_layer] + self.lstm_layers + [self.output_convolution]
+        self.layers = [self.input_lstm_layer] + [self.output_convolution]
 
         super().__init__('both', optimizer_config_path)
 
@@ -58,11 +51,11 @@ class FourwayLstm(superclass.RNN):
                                 non_sequences=V)
         
         #Make root feature:
-        root_features = T.concatenate((V,T.ones(self.char_hidden_dimension*2)))
+        root_features = T.concatenate((V,T.ones(self.hidden_dimension)))
 
         flat_version = thingy.flatten()
         with_root = T.concatenate((root_features, flat_version))
-        in_shape = T.reshape(with_root, newshape=(sentence_length+1,self.char_hidden_dimension*4))
+        in_shape = T.reshape(with_root, newshape=(sentence_length+1,self.hidden_dimension*2))
         return in_shape
    
     def theano_sentence_loss(self, Sentence, Chars, WordLengths, Gold):
@@ -70,32 +63,17 @@ class FourwayLstm(superclass.RNN):
         losses = T.nnet.categorical_crossentropy(preds, Gold)
         return T.sum(losses)
 
-    def char_lstm_with_pad(self, V, word_length):
-        V = V[:word_length]
-        return self.char_lstm_layer.function(V)
-    
     def theano_sentence_prediction(self, Sentence, Chars, WordLengths):
 
-        input_lstm_res, _ = theano.scan(fn=self.char_lstm_with_pad,
-                                        outputs_info=None,
-                                        sequences=[Vs, word_lengths],
-                                        non_sequences=None)
-
-        T.concatenate((input_lstm_res, Sentence), axis=1)
+        input_lstm_res = self.input_lstm_layer.function(Sentence, Chars, WordLengths)
 
         #Make pairwise features. This is really just "tensor product with concatenation instead of multiplication". Is there a command for that?
         pairwise_vs, _ = theano.scan(fn=self.__pairwise_features,
                                   outputs_info=None,
                                   sequences=input_lstm_res,
-                                  non_sequences=[input_lstm_res, Vs.shape[0]])
+                                  non_sequences=[input_lstm_res, Sentence.shape[0]])
         
-        
-        full_matrix = self.input_lstm_layer.function(pairwise_vs)
-
-        for layer in self.lstm_layers:    
-            full_matrix = layer.function(full_matrix)
-
-        final_matrix = self.output_convolution.function(full_matrix)
+        final_matrix = self.output_convolution.function(pairwise_vs)
 
         return T.nnet.softmax(final_matrix)
 

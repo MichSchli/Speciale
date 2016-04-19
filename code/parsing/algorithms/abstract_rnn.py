@@ -60,12 +60,13 @@ class RNN():
     '''
     
     def build_predict_graph(self, saved_graph=None):
+       
         print("Building prediction graph...")
 
         for l in self.layers:
             l.set_training(False)
         
-        Sentence = T.matrix('Sentence')
+        Sentence = T.dmatrix('Sentence')
         Characters = T.dtensor3('Characters')
         WordLengths = T.ivector('WordLengths')
         

@@ -115,7 +115,7 @@ class FourwayLstm(superclass.RNN):
 def fit(features, labels, dev_features, dev_labels, model_path=None):
     optimizer_config_path = 'fourway_optimizer.config'    
     model = FourwayLstm(optimizer_config_path) #, list(features.keys()))
-    #model.load(model_path)
+    model.load(model_path)
 
     model.save_path = model_path
     model.train(features, labels, dev_features, dev_labels)
@@ -124,6 +124,6 @@ def predict(features, model_path=None):
     model = FourwayLstm(None)
     model.load(model_path)
 
-    predictions = model.batch_predict(features)
+    predictions = model.predict(features)
     
     return predictions

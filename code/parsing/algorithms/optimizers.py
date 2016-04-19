@@ -137,7 +137,7 @@ class MinibatchOptimizer(Optimizer):
 
         super().initialize()
 
-    def batch_gradients(self, data_batch, label_batch):
+    def batch_gradients_s(self, data_batch, label_batch):
         aggregate = None
         for sentence, gold in zip(data_batch, label_batch):
             if aggregate is None:
@@ -148,7 +148,7 @@ class MinibatchOptimizer(Optimizer):
 
         return aggregate
 
-    def batch_gradients(self, data_batch, word_length_batch, label_batch):
+    def batch_gradients_c(self, data_batch, word_length_batch, label_batch):
         aggregate = None
         for sentence, word_lengths, gold in zip(data_batch, word_length_batch, label_batch):
             if aggregate is None:
@@ -159,7 +159,7 @@ class MinibatchOptimizer(Optimizer):
 
         return aggregate
         
-    def batch_gradients(self, data_batch, char_batch, word_length_batch, label_batch):
+    def batch_gradients_b(self, data_batch, char_batch, word_length_batch, label_batch):
         aggregate = None
         for sentence, chars, word_lengths, gold in zip(data_batch, char_batch, word_length_batch, label_batch):
             if aggregate is None:
@@ -206,14 +206,14 @@ class MinibatchOptimizer(Optimizer):
                 for data_batch, word_length_batch, label_batch in zip(character_chunks,
                                                                       word_length_chunks,
                                                                       label_chunks):
-                    self.batch_update(data_batch, word_length_batch, label_batch)
+                    self.batch_update_c(data_batch, word_length_batch, label_batch)
 
                     for i, update in enumerate(self.updates):
                         self.weights[i] += self.updates[i]
 
             if not 'character' in self.training_sentences:
                 for data_batch, label_batch in zip(sentence_chunks, label_chunks):
-                    self.batch_update(data_batch, label_batch)
+                    self.batch_update_s(data_batch, label_batch)
 
                     for i, update in enumerate(self.updates):
                         self.weights[i] += self.updates[i]
@@ -223,7 +223,7 @@ class MinibatchOptimizer(Optimizer):
                                                                                   character_chunks,
                                                                                   word_length_chunks,
                                                                                   label_chunks):
-                    self.batch_update(data_batch, char_batch, word_length_batch, label_batch)
+                    self.batch_update_b(data_batch, char_batch, word_length_batch, label_batch)
 
                     for i, update in enumerate(self.updates):
                         self.weights[i] += self.updates[i]
@@ -243,16 +243,16 @@ class StochasticGradientDescent(MinibatchOptimizer):
 
         super().initialize()
 
-    def batch_update(self, data_batch, label_batch):
-        gradients = self.batch_gradients(data_batch, label_batch, *self.weights)
+    def batch_update_s(self, data_batch, label_batch):
+        gradients = self.batch_gradients_s(data_batch, label_batch)
         self.__update_from_gradients(gradients)
     
-    def batch_update(self, data_batch, word_length_batch, label_batch):
-        gradients = self.batch_gradients(data_batch, word_length_batch, label_batch, *self.weights)
+    def batch_update_c(self, data_batch, word_length_batch, label_batch):
+        gradients = self.batch_gradients_c(data_batch, word_length_batch, label_batch)
         self.__update_from_gradients(gradients)
 
-    def batch_update(self, data_batch, char_batch, word_length_batch, label_batch):
-        gradients = self.batch_gradients(data_batch, char_batch, word_length_batch, label_batch, *self.weights)
+    def batch_update_b(self, data_batch, char_batch, word_length_batch, label_batch):
+        gradients = self.batch_gradients_b(data_batch, char_batch, word_length_batch, label_batch)
         self.__update_from_gradients(gradients)
 
         
@@ -281,16 +281,16 @@ class AdaDelta(MinibatchOptimizer):
         self.running_average = [np.zeros_like(weight) for weight in self.weights]
 
 
-    def batch_update(self, data_batch, label_batch):
-        gradients = self.batch_gradients(data_batch, label_batch, *self.weights)
+    def batch_update_s(self, data_batch, label_batch):
+        gradients = self.batch_gradients_s(data_batch, label_batch)
         self.__update_from_gradients(gradients)
     
-    def batch_update(self, data_batch, word_length_batch, label_batch):
-        gradients = self.batch_gradients(data_batch, word_length_batch, label_batch, *self.weights)
+    def batch_update_c(self, data_batch, word_length_batch, label_batch):
+        gradients = self.batch_gradients_c(data_batch, word_length_batch, label_batch)
         self.__update_from_gradients(gradients)
 
-    def batch_update(self, data_batch, char_batch, word_length_batch, label_batch):
-        gradients = self.batch_gradients(data_batch, char_batch, word_length_batch, label_batch, *self.weights)
+    def batch_update_b(self, data_batch, char_batch, word_length_batch, label_batch):
+        gradients = self.batch_gradients_b(data_batch, char_batch, word_length_batch, label_batch)
         self.__update_from_gradients(gradients)
 
         
@@ -325,16 +325,16 @@ class RMSProp(MinibatchOptimizer):
         self.running_average = [np.zeros_like(weight) for weight in self.weights]
 
 
-    def batch_update(self, data_batch, label_batch):
-        gradients = self.batch_gradients(data_batch, label_batch, *self.weights)
+    def batch_update_s(self, data_batch, label_batch):
+        gradients = self.batch_gradients_s(data_batch, label_batch)
         self.__update_from_gradients(gradients)
     
-    def batch_update(self, data_batch, word_length_batch, label_batch):
-        gradients = self.batch_gradients(data_batch, word_length_batch, label_batch, *self.weights)
+    def batch_update_c(self, data_batch, word_length_batch, label_batch):
+        gradients = self.batch_gradients_c(data_batch, word_length_batch, label_batch)
         self.__update_from_gradients(gradients)
 
-    def batch_update(self, data_batch, char_batch, word_length_batch, label_batch):
-        gradients = self.batch_gradients(data_batch, char_batch, word_length_batch, label_batch, *self.weights)
+    def batch_update_b(self, data_batch, char_batch, word_length_batch, label_batch):
+        gradients = self.batch_gradients_b(data_batch, char_batch, word_length_batch, label_batch)
         self.__update_from_gradients(gradients)
 
         
