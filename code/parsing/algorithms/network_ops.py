@@ -258,7 +258,7 @@ class bidirectional_lstm_layer():
         forwards_h = self.forward.function(Vs)
         backwards_h = self.backward.function(Vs)
 
-        return T.concatenate((forwards_h, backwards_h), axis=1)
+        return T.concatenate((forwards_h, backwards_h[::-1]), axis=1)
 
     
 class fourdirectional_lstm_layer():
@@ -318,10 +318,10 @@ class corner_lstm_layer():
         self.output_neurons = output_neurons
 
         self.name = name
-        self.d_forward = lstm_layer(name + 'down_forward', input_neurons, output_neurons, True)
-        self.d_backward = lstm_layer(name + 'down_backward', input_neurons, output_neurons, False)
-        self.u_forward = lstm_layer(name + 'up_forward', input_neurons, output_neurons, True)
-        self.u_backward = lstm_layer(name + 'up_backward', input_neurons, output_neurons, False)
+        self.d_forward = lstm_layer(name + 'down_forward', input_neurons+output_neurons, output_neurons, True)
+        self.d_backward = lstm_layer(name + 'down_backward', input_neurons+output_neurons, output_neurons, False)
+        self.u_forward = lstm_layer(name + 'up_forward', input_neurons+output_neurons, output_neurons, True)
+        self.u_backward = lstm_layer(name + 'up_backward', input_neurons+output_neurons, output_neurons, False)
 
         self.lstms = [self.d_forward, self.d_backward, self.u_forward, self.u_backward]
 
@@ -332,7 +332,14 @@ class corner_lstm_layer():
             cur = prev + lstm.weight_count()
             lstm.update_weights(update_list[prev:cur])
             prev = cur
-            
+
+    def set_training(self, training):
+        self.training=training
+        self.d_forward.set_training(training)
+        self.d_backward.set_training(training)
+        self.u_forward.set_training(training)
+        self.u_backward.set_training(training)
+                    
     def weight_count(self):
         return sum([lstm.weight_count() for lstm in self.lstms])
         
@@ -351,25 +358,28 @@ class corner_lstm_layer():
 
         lstm_out_1, _ = theano.scan(fn=lambda a,b: self.__conc_wrapper(a,b,self.d_forward.function),
                                       outputs_info=init_hs,
-                                      sequences=transpose_vm,
+                                      sequences=VM,
                                       non_sequences=None)
         
         lstm_out_2, _ = theano.scan(fn=lambda a,b: self.__conc_wrapper(a,b,self.d_backward.function),
                                       outputs_info=init_hs,
-                                      sequences=transpose_vm,
+                                      sequences=VM,
                                       non_sequences=None)
-
+        
         lstm_out_3, _ = theano.scan(fn=lambda a,b: self.__conc_wrapper(a,b,self.u_forward.function),
                                       outputs_info=init_hs,
-                                      sequences=transpose_vm,
-                                      non_sequences=None)
+                                      sequences=VM,
+                                      non_sequences=None,
+                                    go_backwards=True)
 
         lstm_out_4, _ = theano.scan(fn=lambda a,b: self.__conc_wrapper(a,b,self.u_backward.function),
                                       outputs_info=init_hs,
-                                      sequences=transpose_vm,
-                                      non_sequences=None)
+                                      sequences=VM,
+                                      non_sequences=None,
+                                    go_backwards=True)
 
-        return T.concatenate((lstm_out_1, lstm_out_2, lstm_out_3, lstm_out_4), axis=2)
+
+        return T.concatenate((lstm_out_1, lstm_out_2, lstm_out_3[::-1], lstm_out_4[::-1]), axis=2)
 
     
 class linear_layer():
