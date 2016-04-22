@@ -63,6 +63,79 @@ class single_lstm():
         h = output * T.tanh(cell_state)
         return h, cell_state
 
+class twodim_lstm(): 
+
+    training=False
+    
+    def __init__(self, name, input_neurons, output_neurons):
+        self.input_neurons=input_neurons
+        self.output_neurons=output_neurons
+
+        self.name = name
+
+        #Initialize theano variables:
+        self.W_forget_theano_1 = T.dmatrix(self.name + '_forget_weight_1')
+        self.W_forget_theano_2 = T.dmatrix(self.name + '_forget_weight_2')
+        self.W_input_theano = T.dmatrix(self.name + '_input_weight')
+        self.W_candidate_theano = T.dmatrix(self.name + '_candidate_weight')
+        self.W_output_theano = T.dmatrix(self.name + '_output_weight')
+
+        #Initialize python variables:
+
+        high_init = np.sqrt(6)/np.sqrt(self.input_neurons + 2*self.output_neurons)
+        low_init = -high_init
+        
+        s = (self.output_neurons, self.input_neurons + self.output_neurons*2 + 1)
+        
+        self.W_forget_1 = np.random.uniform(low=low_init, high=high_init, size=s)
+        self.W_forget_2 = np.random.uniform(low=low_init, high=high_init, size=s)
+        self.W_input = np.random.uniform(low=low_init, high=high_init, size=s)
+        self.W_candidate = np.random.uniform(low=low_init, high=high_init, size=s)
+        self.W_output = np.random.uniform(low=low_init, high=high_init, size=s)
+
+        #Initialize forget bias to one:
+        self.W_forget_1[-1] = np.ones_like(self.W_forget_1[-1])
+        self.W_forget_2[-1] = np.ones_like(self.W_forget_2[-1])
+
+    def set_training(self, training):
+        self.training=training
+
+    def update_weights(self, update_list):
+        self.W_forget_1 = update_list[1]
+        self.W_forget_2 = update_list[2]
+        self.W_input = update_list[3]
+        self.W_candidate = update_list[4]
+        self.W_output = update_list[5]
+
+    def weight_count(self):
+        return 5
+        
+    def get_theano_weights(self):
+        return self.W_forget_theano_1, self.W_forget_theano_2, self.W_input_theano, self.W_candidate_theano, self.W_output_theano
+
+    def get_python_weights(self):
+        return self.W_forget_1, self.W_forget_2, self.W_input, self.W_candidate, self.W_output
+    
+    
+    def function(self, x, h_prev_1, c_prev_1, h_prev_2, c_prev_2):
+        input_vector = T.concatenate((x, h_prev_1, h_prev_2, [1]))
+
+        forget_gate_1 = T.nnet.sigmoid(T.dot(self.W_forget_theano_1, input_vector))
+        forget_gate_2 = T.nnet.sigmoid(T.dot(self.W_forget_theano_2, input_vector))
+        
+        input_gate = T.nnet.sigmoid(T.dot(self.W_input_theano, input_vector))
+        candidate_vector = T.tanh(T.dot(self.W_candidate_theano, input_vector))
+
+        cell_state_1 = forget_gate_1*c_prev_1 + input_gate * candidate_vector
+        cell_state_2 = forget_gate_2*c_prev_2 + input_gate * candidate_vector
+
+        cell_state_total = cell_state_1 + cell_state_2
+
+        output = T.nnet.sigmoid(T.dot(self.W_output_theano, input_vector))
+        h = output * T.tanh(cell_state_total)
+        return h, cell_state_total
+
+    
 class multilayer_lstm():
 
     def __init__(self, name,
@@ -145,7 +218,7 @@ class lstm_layer():
 
     training=False
     
-    def __init__(self, name, input_neurons, output_neurons, direction):
+    def __init__(self, name, input_neurons, output_neurons, direction, get_cell_values=False):
         self.input_neurons=input_neurons
         self.output_neurons=output_neurons
         self.direction=direction
@@ -153,6 +226,7 @@ class lstm_layer():
         self.name = name
         self.neuron=single_lstm(name, input_neurons, output_neurons)
 
+        self.get_cell_values=get_cell_values
     
     def set_training(self, training):
         self.training=training
@@ -180,9 +254,18 @@ class lstm_layer():
                         non_sequences=None,
                         go_backwards=not self.direction)
 
-        # Discard the cell values:
-        return lstm_preds[0]
+        if self.direction:
+            if not self.get_cell_values:
+                return lstm_preds[0]
+            else:
+                return lstm_preds
+        else:
+            if not self.get_cell_values:
+                return lstm_preds[0][::-1]
+            else:
+                return [lstm_preds[0][::-1], lstm_preds[1][::-1]]
 
+            
 class bidirectional_rnn_lstm():
 
     training=False
@@ -258,7 +341,7 @@ class bidirectional_lstm_layer():
         forwards_h = self.forward.function(Vs)
         backwards_h = self.backward.function(Vs)
 
-        return T.concatenate((forwards_h, backwards_h[::-1]), axis=1)
+        return T.concatenate((forwards_h, backwards_h), axis=1)
 
     
 class fourdirectional_lstm_layer():
@@ -318,10 +401,10 @@ class corner_lstm_layer():
         self.output_neurons = output_neurons
 
         self.name = name
-        self.d_forward = lstm_layer(name + 'down_forward', input_neurons+output_neurons, output_neurons, True)
-        self.d_backward = lstm_layer(name + 'down_backward', input_neurons+output_neurons, output_neurons, False)
-        self.u_forward = lstm_layer(name + 'up_forward', input_neurons+output_neurons, output_neurons, True)
-        self.u_backward = lstm_layer(name + 'up_backward', input_neurons+output_neurons, output_neurons, False)
+        self.d_forward = twodim_lstm(name + 'down_forward', input_neurons, output_neurons)
+        self.d_backward = twodim_lstm(name + 'down_backward', input_neurons, output_neurons)
+        self.u_forward = twodim_lstm(name + 'up_forward', input_neurons, output_neurons)
+        self.u_backward = twodim_lstm(name + 'up_backward', input_neurons, output_neurons)
 
         self.lstms = [self.d_forward, self.d_backward, self.u_forward, self.u_backward]
 
@@ -349,37 +432,52 @@ class corner_lstm_layer():
     def get_python_weights(self):
         return tuple(w for lstm in self.lstms for w in lstm.get_python_weights())
 
-    def __conc_wrapper(self, V, hs, layer_function):
-        inp = T.concatenate((V, hs), axis=1)
-        return layer_function(inp)
+    def __lstm_wrapper(self, input_matrix, prev_hidden_matrix, prev_cell_matrix, lstm, go_forwards=True):
+        h0 = T.zeros(self.output_neurons)
+        c0 = T.zeros(self.output_neurons)
+
+        lstm_preds, _ = theano.scan(fn=lstm.function,
+                        outputs_info=[h0,c0],
+                        sequences=[input_matrix, prev_hidden_matrix, prev_cell_matrix],
+                        non_sequences=None,
+                                    go_backwards=not go_forwards)
+
+        if go_forwards:
+            return lstm_preds
+        else:
+            return lstm_preds[0][::-1], lstm_preds[1][::-1]
     
-    def function(self, VM):
-        init_hs = T.zeros((VM.shape[1], self.output_neurons))
+    def function(self, input_tensor):
+        init_hs = T.zeros((input_tensor.shape[1], self.output_neurons))
+        init_cs = T.zeros((input_tensor.shape[1], self.output_neurons))
 
-        lstm_out_1, _ = theano.scan(fn=lambda a,b: self.__conc_wrapper(a,b,self.d_forward.function),
-                                      outputs_info=init_hs,
-                                      sequences=VM,
+        lstm_out_1, _ = theano.scan(fn=lambda a,b,c: self.__lstm_wrapper(a,b,c,self.d_forward, go_forwards=True),
+                                      outputs_info=[init_hs,init_cs],
+                                      sequences=input_tensor,
                                       non_sequences=None)
         
-        lstm_out_2, _ = theano.scan(fn=lambda a,b: self.__conc_wrapper(a,b,self.d_backward.function),
-                                      outputs_info=init_hs,
-                                      sequences=VM,
+        lstm_out_2, _ = theano.scan(fn=lambda a,b,c: self.__lstm_wrapper(a,b,c,self.d_backward, go_forwards=False),
+                                      outputs_info=[init_hs,init_cs],
+                                      sequences=input_tensor,
                                       non_sequences=None)
         
-        lstm_out_3, _ = theano.scan(fn=lambda a,b: self.__conc_wrapper(a,b,self.u_forward.function),
-                                      outputs_info=init_hs,
-                                      sequences=VM,
+        lstm_out_3, _ = theano.scan(fn=lambda a,b,c: self.__lstm_wrapper(a,b,c,self.u_forward, go_forwards=True),
+                                      outputs_info=[init_hs,init_cs],
+                                      sequences=input_tensor,
                                       non_sequences=None,
-                                    go_backwards=True)
+                                      go_backwards=True)
 
-        lstm_out_4, _ = theano.scan(fn=lambda a,b: self.__conc_wrapper(a,b,self.u_backward.function),
-                                      outputs_info=init_hs,
-                                      sequences=VM,
+        lstm_out_4, _ = theano.scan(fn=lambda a,b,c: self.__lstm_wrapper(a,b,c,self.u_backward, go_forwards=False),
+                                      outputs_info=[init_hs,init_cs],
+                                      sequences=input_tensor,
                                       non_sequences=None,
-                                    go_backwards=True)
+                                      go_backwards=True)
 
 
-        return T.concatenate((lstm_out_1, lstm_out_2, lstm_out_3[::-1], lstm_out_4[::-1]), axis=2)
+        return T.concatenate((lstm_out_1[0],
+                              lstm_out_2[0],
+                              lstm_out_3[0][::-1],
+                              lstm_out_4[0][::-1]), axis=2)
 
     
 class linear_layer():

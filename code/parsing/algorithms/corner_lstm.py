@@ -15,7 +15,7 @@ class CornerLstm(superclass.RNN):
     Fields:
     '''
 
-    hidden_dimension = 4
+    hidden_dimension = 64
     input_dimension = 64
     
     '''
@@ -31,15 +31,15 @@ class CornerLstm(superclass.RNN):
         #For now, linear layer projecting to larger space to match network:
         self.input_lstm_layer = network_ops.corner_lstm_layer('input_layer_', self.input_dimension * 2, self.hidden_dimension)
 
-        #self.lstm_layers = [network_ops.fourdirectional_lstm_layer('layer_'+str(l),
-        #                                                      self.hidden_dimension * 4,
-        #                                                      self.hidden_dimension) for l in range(n_layers-1)]
+        self.lstm_layers = [network_ops.corner_lstm_layer('layer_'+str(l),
+                                                              self.hidden_dimension * 4,
+                                                              self.hidden_dimension) for l in range(n_layers-1)]
         
         #self.first_lstm_layer = network_ops.fourdirectional_lstm_layer('first_layer', self.hidden_dimension * 4, self.hidden_dimension)
         #self.second_lstm_layer = network_ops.fourdirectional_lstm_layer('second_layer', self.hidden_dimension * 4, self.hidden_dimension)
         self.output_convolution = network_ops.linear_tensor_convolution_layer('output_layer', self.hidden_dimension*4, 1)
         
-        self.layers = [self.input_lstm_layer] + [self.output_convolution]
+        self.layers = [self.input_lstm_layer] + self.lstm_layers + [self.output_convolution]
 
         super().__init__('sentence', optimizer_config_path)
 
@@ -76,9 +76,28 @@ class CornerLstm(superclass.RNN):
                                   sequences=Vs,
                                   non_sequences=[Vs, Vs.shape[0]])
 
+        if self.input_lstm_layer.training:
+            srng = RandomStreams(seed=12345)
         
         full_matrix = self.input_lstm_layer.function(pairwise_vs)
 
+        for layer in self.lstm_layers:            
+            if self.input_lstm_layer.training:
+                print("hah-train")
+                full_matrix = T.switch(srng.binomial(size=(Vs.shape[0], Vs.shape[0]+1, self.hidden_dimension*4), p=0.5), full_matrix, 0)
+            else:
+                print("heh-notrain")
+                full_matrix = 0.5 * full_matrix
+            
+            full_matrix = layer.function(full_matrix)
+
+        if self.input_lstm_layer.training:
+            print("hah-train")
+            full_matrix = T.switch(srng.binomial(size=(Vs.shape[0], Vs.shape[0]+1, self.hidden_dimension*4), p=0.5), full_matrix, 0)
+        else:
+            print("heh-notrain")
+            full_matrix = 0.5 * full_matrix
+            
         final_matrix = self.output_convolution.function(full_matrix)
 
         return T.nnet.softmax(final_matrix)
