@@ -101,11 +101,11 @@ class twodim_lstm():
         self.training=training
 
     def update_weights(self, update_list):
-        self.W_forget_1 = update_list[1]
-        self.W_forget_2 = update_list[2]
-        self.W_input = update_list[3]
-        self.W_candidate = update_list[4]
-        self.W_output = update_list[5]
+        self.W_forget_1 = update_list[0]
+        self.W_forget_2 = update_list[1]
+        self.W_input = update_list[2]
+        self.W_candidate = update_list[3]
+        self.W_output = update_list[4]
 
     def weight_count(self):
         return 5
@@ -210,7 +210,10 @@ class multilayer_lstm():
                                     go_backwards=not self.run_forward)
 
         # Discard the cell values:
-        return lstm_preds[0]
+        if self.run_forward:
+            return lstm_preds[0]
+        else:
+            return lstm_preds[0][::-1]
     
     
     

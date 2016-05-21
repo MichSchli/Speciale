@@ -197,7 +197,7 @@ class MinibatchOptimizer(Optimizer):
 
         self.updates = [np.zeros_like(weight) for weight in self.weights]
         
-        while(self.current_iteration < self.max_iterations):
+        while(self.current_iteration < self.max_iterations and prev_loss > current_loss):
             prev_loss = current_loss
             print("Running optimizer at iteration "+str(self.current_iteration)+". Current loss: "+str(prev_loss))
             self.current_iteration += 1
@@ -230,10 +230,13 @@ class MinibatchOptimizer(Optimizer):
 
 
             print('')
-            self.do_update()
+            #self.do_update()
 
             current_loss = self.development_loss()
+            if prev_loss > current_loss:
+                self.do_update()
 
+        print("Stopping.")
 
 class StochasticGradientDescent(MinibatchOptimizer):
 

@@ -16,6 +16,25 @@ def conll_list_to_dict(token_list):
 
     return token_dict
 
+def read_raw_conll_sentences(filename):
+    
+    sentences = [[]]
+    
+    for line in open(filename, 'r+'):
+        stripped = line.strip()
+
+        if stripped:
+            token_list = stripped.split('\t')
+            sentences[-1].append(token_list)
+        else:
+            sentences.append([])
+
+    while sentences[-1] == []:
+        sentences = sentences[:-1]
+
+    return sentences
+
+
 def read_conll_sentences(filename):
     
     sentences = [[]]

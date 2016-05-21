@@ -35,7 +35,7 @@ class FourwayLstm(superclass.RNN):
 
         self.char_lstm_layer = network_ops.bidirectional_rnn_lstm('char_input_layer_', self.char_input_dimension, self.char_hidden_dimension)
         
-        self.input_lstm_layer = network_ops.fourdirectional_lstm_layer('input_layer_', self.char_hidden_dimension * 2 * 2, self.hidden_dimension)
+        self.input_lstm_layer = network_ops.fourdirectional_lstm_layer('input_layer_', self.char_hidden_dimension * 2 * 2+1, self.hidden_dimension)
 
         self.lstm_layers = [network_ops.fourdirectional_lstm_layer('layer_'+str(l),
                                                               self.hidden_dimension * 4,
@@ -53,20 +53,22 @@ class FourwayLstm(superclass.RNN):
     '''
     Theano functions:
     '''
-        
+
     def __pairwise_features(self, V, Vs, sentence_length):
-        thingy, _ = theano.scan(fn=lambda x, y: T.concatenate([y,x]),
+        thingy, _ = theano.scan(fn=lambda x, y: T.concatenate([y,[0],x]),
                                 sequences=Vs,
                                 non_sequences=V)
+
+        root_feature = T.concatenate((T.ones(1), T.zeros(self.char_hidden_dimension*2)))
         
         #Make root feature:
-        root_features = T.concatenate((V,T.ones(self.char_hidden_dimension*2)))
+        root_features = T.concatenate((V,root_feature))
 
         flat_version = thingy.flatten()
         with_root = T.concatenate((root_features, flat_version))
-        in_shape = T.reshape(with_root, newshape=(sentence_length+1,self.char_hidden_dimension*4))
+        in_shape = T.reshape(with_root, newshape=(sentence_length+1,self.char_hidden_dimension*4+1))
         return in_shape
-   
+
     def theano_sentence_loss(self, Vs, word_lengths, gold):
         preds = self.theano_sentence_prediction(Vs, word_lengths)
         losses = T.nnet.categorical_crossentropy(preds, gold)

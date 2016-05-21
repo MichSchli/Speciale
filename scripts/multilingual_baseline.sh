@@ -1,0 +1,48 @@
+#!/bin/bash
+
+#Configuration:
+SOURCE_PARSE_FOLDER=data/universal-dependencies
+
+ALGORITHM=fourway_lstm
+FEATURE_SETTING=sentence
+
+TRAIN_FILE=data/temporary/train.conll
+DEV_FILE=data/temporary/dev.conll
+TEST_FILE=data/temporary/test.conll
+
+TEMP_FILE=data/temporary/scratchpad.conll
+
+LANGUAGES=( "da" "de" "el" "en" "es" "fi" "fr" "he" "sl" "sv")
+
+#Verify and generate...
+
+for LANGUAGE in ${LANGUAGES[@]}
+do
+    echo "Running experiment for: "$LANGUAGE
+    mkdir -p results/$LANGUAGE/
+    rm -rf $TRAIN_FILE
+    rm -rf $DEV_FILE
+    rm -rf $TEST_FILE
+
+    echo "Creating concatenated train file:"
+    find './'$SOURCE_PARSE_FOLDER'/train/' -iname '*.conllu' -not -name $LANGUAGE'-ud-train.conllu' -exec cat {} + > $TRAIN_FILE
+
+    echo "Creating concatenated dev file:"
+    find './'$SOURCE_PARSE_FOLDER'/dev/' -iname '*.conllu' -not -name $LANGUAGE'-ud-dev.conllu' -exec cat {} + > $DEV_FILE
+    
+    echo "Creating test file:"
+    cat './'$SOURCE_PARSE_FOLDER'/test/'$LANGUAGE'-ud-test.conllu' > $TEST_FILE
+
+    echo "Preprocessing files..."
+    bash scripts/preprocess.sh $TRAIN_FILE
+    bash scripts/preprocess.sh $DEV_FILE
+    bash scripts/preprocess.sh $TEST_FILE
+
+    echo "Training model..."
+    bash scripts/train_pipeline.sh $TRAIN_FILE $DEV_FILE $ALGORITHM $FEATURE_SETTING > results/$LANGUAGE/baseline.log
+
+    bash scripts/test_pipeline.sh $TEST_FILE > results/$LANGUAGE/baseline.res
+done
+
+    
+

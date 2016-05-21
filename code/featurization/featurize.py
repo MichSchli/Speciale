@@ -16,7 +16,7 @@ character_feature_file = args.outfile + '.character.feat'
 
 sentences = io.read_conll_sentences(args.infile)
 
-pos_dict = {tag:idx for idx, tag in enumerate(definitions.stanford_pos)}
+pos_dict = {tag:idx for idx, tag in enumerate(definitions.universal_pos)}
 
 embedding_model = embeddings.PolyglotReader()
 
@@ -26,10 +26,10 @@ def __featurize_token(token):
 
     feature = embedding_model[token['token'].lower()]
 
-    pos = [0]*len(definitions.stanford_pos)
-    pos[pos_dict[token['stanford_pos']]] = 1
+    pos = [0]*len(definitions.universal_pos)
+    pos[pos_dict[token['universal_pos']]] = 1
     
-    #feature = np.concatenate((feature, pos))
+    feature = np.concatenate((feature, pos))
     return feature
 
 def __featurize_character(character):

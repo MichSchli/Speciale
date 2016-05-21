@@ -1,0 +1,82 @@
+#!/bin/bash
+
+#Configuration:
+SOURCE_PARSE_FOLDER=data/bible/source_parses
+NORMALIZED_PARSE_FOLDER=data/bible/normalized_parses
+WALIGN_FOLDER=data/bible/projections
+SALIGN_FOLDER=data/bible/projections
+GOLD_FOLDER=data/universal-dependencies/test
+
+ALGORITHM=fourway_lstm
+FEATURE_SETTING=sentence
+
+TRAIN_FILE=data/temporary/train.conll
+DEV_FILE=data/temporary/dev.conll
+TEST_FILE=data/temporary/test.conll
+
+TEMP_FILE=data/temporary/scratchpad.conll
+#LANGUAGES=( "da" "de" "el" "en" "es" "fi" "fr" "he" "sl" "sv")
+LANGUAGES=( "de" "es" "en" )
+
+#Perform setup:
+TRAIN_FEATURE_FILE=$TRAIN_FILE'.feature'
+TRAIN_GRAPH_FILE=$TRAIN_FILE'.graph'
+DEV_FEATURE_FILE=$DEV_FILE'.feature'
+DEV_GRAPH_FILE=$DEV_FILE'.graph'
+TEST_FEATURE_FILE=$TEST_FILE'.feature'
+TEST_GRAPH_FILE=$TEST_FILE'.graph'
+
+for LANGUAGE in ${LANGUAGES[@]}
+do
+    echo "Normalizing file for "$LANGUAGE$"..."
+    mkdir -p $NORMALIZED_PARSE_FOLDER
+    #python code/processing/proj_to_graph.py --infile $SOURCE_PARSE_FOLDER'/'$LANGUAGE'.2proj.conll' --outfile $NORMALIZED_PARSE_FOLDER'/'$LANGUAGE'.graph.conll'
+done
+
+#Run the parser:
+for LANGUAGE in ${LANGUAGES[@]}
+do
+    echo "Running experiment for: "$LANGUAGE
+    mkdir -p results/$LANGUAGE/
+    rm -rf $TRAIN_FILE
+    rm -rf $DEV_FILE
+    rm -rf $TEST_FILE
+
+    python code/multilingual/generate_uniform.py --infile $NORMALIZED_PARSE_FOLDER'/'$LANGUAGE'.graph.conll' --outfile $TEMP_FILE
+
+    #Append information from other languages:
+    for LANGUAGE2 in ${LANGUAGES[@]}
+    do
+	if [ $LANGUAGE != $LANGUAGE2 ]
+	then
+	    python code/multilingual/project_labels.py --infile $NORMALIZED_PARSE_FOLDER'/'$LANGUAGE2'.graph.conll' --walign $WALIGN_FOLDER'/'$LANGUAGE2'-'$LANGUAGE'.bible.ibm1.reverse.wal' --salign $SALIGN_FOLDER'/'$LANGUAGE2'-'$LANGUAGE'.bible.sal' --outfile $TEMP_FILE
+	fi
+    done
+    
+    exit
+    #Split in train and develop:
+    python code/multilingual/train_dev_split.py --infile $TEMP_FILE --train $TRAIN_GRAPH_FILE --dev $DEV_GRAPH_FILE
+
+    #Move test:
+    cat $GOLD_FOLDER'/'$LANGUAGE$'-ud-test.conllu' > $TEST_GRAPH_FILE
+    
+    #Featurize:
+    python code/featurization/featurize.py --infile $TRAIN_GRAPH_FILE --outfile $TRAIN_FEATURE_FILE
+    python code/featurization/featurize.py --infile $DEV_GRAPH_FILE --outfile $DEV_FEATURE_FILE
+    python code/featurization/featurize.py --infile $TEST_GRAPH_FILE --outfile $TEST_FEATURE_FILE
+
+    echo "Training..."
+    #Train on the created file:
+    bash scripts/train_pipeline.sh $TRAIN_FILE $DEV_FILE $ALGORITHM $FEATURE_SETTING > results/$LANGUAGE/proj-smooth.log
+
+    echo "Testing..."
+    #Test on the test file:
+    bash scripts/test_pipeline.sh $TEST_FILE $ALGORITHM $FEATURE_SETTING >  results/$LANGUAGE/proj-smooth.res
+
+    #Dont forget to delete model and generated data!
+done
+
+exit
+
+    
+

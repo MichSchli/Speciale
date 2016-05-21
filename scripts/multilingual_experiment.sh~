@@ -1,0 +1,64 @@
+#!/bin/bash
+
+#Configuration:
+SOURCE_PARSE_FOLDER=data/bible/source_parses
+PROJECTION_FOLDER=data/bible/projections
+GOLD_FOLDER=data/bible/gold
+
+ALGORITHM=fourway_lstm
+FEATURE_SETTING=sentence
+TRAIN_FILE=data/temporary/train.conll
+DEV_FILE=data/temporary/dev.conll
+TEST_FILE=data/temporary/test.conll
+
+TEMP_FILE=data/temporary/scratchpad.conll
+
+TRAIN_LOG=logs/train.log
+TEST_LOG=logs/test.log
+
+declare -a LANGUAGES=("de" "en" "es")
+
+#Process configuration:
+DATASETS=$(ls $DATASET_FOLDER)
+
+TRAIN_LABEL_FILE=$TRAIN_FILE'.graph'
+TRAIN_FEATURE_FILE=$TRAIN_FILE'.feature'
+
+DEV_LABEL_FILE=$DEV_FILE'.graph'
+DEV_FEATURE_FILE=$DEV_FILE'.feature'
+
+TEST_LABEL_FILE=$TEST_FILE'.graph'
+TEST_FEATURE_FILE=$TEST_FILE'.feature'
+
+#Verify and generate...
+
+for LANGUAGE in $LANGUAGES
+do
+    echo "Running experiment for: "$LANGUAGE
+   
+    #Compute projected label file:
+    python code/multilingual/project_labels.py --language $LANGUAGE --parse_folder $SOURCE_PARSE_FOLDER --projection_folder $PROJECTION_FOLDER --outfile $TEMP_FILE
+
+    #Split in train and develop:
+    python code/multilingual/train_dev_split --infile $TEMP_FILE --train $TRAIN_FILE --dev $DEV_FILE
+    
+    #Featurize:
+    python code/featurization/featurize.py --infile $TRAIN_LABEL_FILE --outfile $TRAIN_FEATURE_FILE
+    python code/featurization/featurize.py --infile $DEV_LABEL_FILE --outfile $DEV_FEATURE_FILE
+    python code/featurization/featurize.py --infile $TEST_LABEL_FILE --outfile $TEST_FEATURE_FILE
+
+    echo "Training..."
+    #Train on the created file:
+    bash scripts/train_pipeline.sh $TRAIN_FILE $DEV_FILE $ALGORITHM $FEATURE_SETTING >> $TRAIN_LOG
+
+    echo "Testing..."
+    #Test on the test file:
+    bash scripts/test_pipeline.sh $TEST_FILE $ALGORITHM $FEATURE_SETTING >> $TEST_LOG
+
+    #Dont forget to delete model and generated data!
+done
+
+exit
+
+    
+
