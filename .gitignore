@@ -11,7 +11,7 @@ __pycache__/
 
 # Data files:
 data/
-misc/glove.6B
+misc/
 
 # Models:
 *.model
