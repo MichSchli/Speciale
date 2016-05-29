@@ -31,10 +31,7 @@ for sentmatch, projsentence in zip(open(args.salign, 'r'), open(args.walign, 'r'
             read_pair = False
         else:
             read_pair = True
-            print(pair)
-            print(' '.join([word['token'] for word in s_sentence]))
-            print(' '.join([word['token'] for word in t_sentence]))
-
+    
             if pair[0] not in pairdict:
                 pairdict[pair[0]] = {}
                 

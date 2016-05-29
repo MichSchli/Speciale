@@ -22,8 +22,13 @@ def __find_mst(graph):
     graph = np.transpose(graph)
 
     G = nx.DiGraph(graph)
-    MSA = nx.minimum_spanning_arborescence(G)
-
+    try:
+        MSA = nx.minimum_spanning_arborescence(G)
+    except nx.exception.NetworkXException:
+        # If a node with no head exists, hack it into a node with uniform dist:
+        ng = np.array(graph - 0.0001)
+        MSA = nx.minimum_spanning_arborescence(nx.DiGraph(ng))
+        
     return nx.adjacency_matrix(MSA).todense().transpose()*(-1)
     
 for sentence_idx,sentence in enumerate(sentences):
@@ -41,7 +46,8 @@ for sentence_idx,sentence in enumerate(sentences):
 
     for i, token in enumerate(sentence):
         token['dependency_head_id'] = int(edges[i+1])
-        token['dependency_graph'] = np.ravel(mst[i+1])
+        token['dependency_graph'] = np.zeros((len(sentence)+1))
+        token['dependency_graph'][int(edges[i+1])] = 1.0
 
 io.write_conll_sentences(sentences, args.outfile)
 

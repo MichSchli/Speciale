@@ -4,6 +4,7 @@ import theano
 import pickle
 import imp
 from theano.tensor.shared_randomstreams import RandomStreams
+import random
 
 superclass = imp.load_source('abstract_rnn', 'code/parsing/algorithms/abstract_rnn.py')
 network_ops = imp.load_source('network_ops', 'code/parsing/algorithms/network_ops.py')
@@ -16,7 +17,7 @@ class FourwayLstm(superclass.RNN):
     '''
 
     hidden_dimension = 64
-    input_dimension = 17
+    input_dimension = 500
     
     '''
     Initialization:
@@ -67,6 +68,8 @@ class FourwayLstm(superclass.RNN):
    
     def theano_sentence_loss(self, Vs, gold):
         preds = self.theano_sentence_prediction(Vs)
+        #keep_indexes = gold.sum(axis=1).nonzero()
+        #losses = T.nnet.categorical_crossentropy(preds[keep_indexes], gold[keep_indexes])
         losses = T.nnet.categorical_crossentropy(preds, gold)
         return T.sum(losses)
 
@@ -115,9 +118,40 @@ class FourwayLstm(superclass.RNN):
     
 
 def fit(features, labels, dev_features, dev_labels, model_path=None):
+    n_samples = 10000
+    n_dev_samples = 300
+
+    sample = random.sample(range(len(labels)), n_samples)
+    dev_sample = random.sample(range(len(dev_labels)), n_dev_samples)
+
+    print(len(features['sentence']))
+    print(len(labels))
+    print(len(dev_features['sentence']))
+    print(len(dev_labels))
+
+    #print(sample)
+    #print(dev_sample)
+    
+    features['sentence'] = [features['sentence'][x] for x in sample]
+    dev_features['sentence'] = [dev_features['sentence'][x] for x in dev_sample]
+
+    labels = [labels[x] for x in sample]
+    dev_labels = [dev_labels[x] for x in dev_sample]
+    
+    print(len(features['sentence'][0]))
+    print(len(labels[0]))
+    print(len(dev_features['sentence'][0]))
+    print(len(dev_labels[0]))
+
+    print(len(features['sentence'][1]))
+    print(len(labels[1]))
+    print(len(dev_features['sentence'][1]))
+    print(len(dev_labels[1]))
+    
+    
     optimizer_config_path = 'fourway_optimizer.config'    
     model = FourwayLstm(optimizer_config_path) #, list(features.keys()))
-    model.load(model_path)
+    #model.load(model_path)
 
     model.save_path = model_path
     model.train(features, labels, dev_features, dev_labels)

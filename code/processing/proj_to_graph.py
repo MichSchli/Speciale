@@ -1,31 +1,29 @@
 import imp
 import argparse
+import numpy as np
 
 io = imp.load_source('io', 'code/common/io.py')
 definitions = imp.load_source('definitions', 'code/common/definitions.py')
 conll_column_headers = definitions.conll_column_headers
 
-parser = argparse.ArgumentParser(description="Convert a reference-to-head formt to a graph-format.")
+parser = argparse.ArgumentParser(description="Convert a reference-to-head form to a graph-format.")
 parser.add_argument("--infile", help="Input filepath (CoNLL format).", required=True)
 parser.add_argument("--outfile", help="Output filepath (CoNLL format).", required=True)
 args = parser.parse_args()
 
+def softmax(x):
+    return np.exp(x) / np.sum(np.exp(x), axis=0)
+
 def process_graph(text_graph, current_sentence_length):
     elements = [float(e.split(':')[1]) for e in text_graph.split(' ')]
-
-    minimum = min(elements)
-    bonus = 1/float(len(elements))
-    elements = [e - minimum + bonus for e in elements] 
-
-    total = sum(elements)
-    elements = [e / total for e in elements]
+    elements = softmax(elements)
     indices = [int(e.split(':')[0]) for e in text_graph.split(' ')]
     
     output_list = ['0.0']*(current_sentence_length+1)
 
     for n,e in zip(indices, elements):
         output_list[n] = str(e)
-
+    
     return output_list
         
 

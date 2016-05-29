@@ -66,8 +66,8 @@ class RNN():
         for l in self.layers:
             l.set_training(False)
         
-        Sentence = T.dmatrix('Sentence')
-        Characters = T.dtensor3('Characters')
+        Sentence = T.fmatrix('Sentence')
+        Characters = T.ftensor3('Characters')
         WordLengths = T.ivector('WordLengths')
         
         weight_list = self.get_theano_weight_list()
@@ -82,7 +82,7 @@ class RNN():
             result = self.theano_sentence_prediction(Sentence, Characters, WordLengths)
             input_list = [Sentence, Characters, WordLengths] + list(weight_list)
 
-        cgraph = theano.function(inputs=input_list, on_unused_input='warn', outputs=result, mode='FAST_RUN')
+        cgraph = theano.function(inputs=input_list, outputs=result, mode='FAST_RUN', allow_input_downcast=True)
 
         print("Done building graph.")
 
@@ -99,10 +99,10 @@ class RNN():
         for l in self.layers:
             l.set_training(False)
 
-        Sentence = T.matrix('Sentence')
-        Characters = T.dtensor3('Characters')
+        Sentence = T.fmatrix('Sentence')
+        Characters = T.ftensor3('Characters')
         WordLengths = T.ivector('WordLengths')
-        GoldPredictions = T.dmatrix('GoldPredictions')
+        GoldPredictions = T.fmatrix('GoldPredictions')
         
         weight_list = self.get_theano_weight_list()
 
@@ -116,7 +116,7 @@ class RNN():
             result = self.theano_sentence_loss(Sentence, Characters, WordLengths, GoldPredictions)
             input_list = [Sentence, Characters, WordLengths, GoldPredictions] + list(weight_list)
 
-        cgraph = theano.function(inputs=input_list, on_unused_input='warn', outputs=result)
+        cgraph = theano.function(inputs=input_list, outputs=result, mode='FAST_RUN', allow_input_downcast=True)
 
         print("Done building graph.")
         
@@ -133,10 +133,10 @@ class RNN():
         for l in self.layers:
             l.set_training(True)
 
-        Sentence = T.matrix('Sentence')
-        Characters = T.dtensor3('Characters')
+        Sentence = T.fmatrix('Sentence')
+        Characters = T.ftensor3('Characters')
         WordLengths = T.ivector('WordLengths')
-        GoldPredictions = T.dmatrix('GoldPredictions')
+        GoldPredictions = T.fmatrix('GoldPredictions')
         
         weight_list = self.get_theano_weight_list()
 
@@ -152,7 +152,7 @@ class RNN():
             
         grads = T.grad(loss, weight_list)
 
-        cgraph = theano.function(inputs=input_list, outputs=grads, mode='FAST_RUN')
+        cgraph = theano.function(inputs=input_list, outputs=grads, mode='FAST_RUN', allow_input_downcast=True)
         
         print("Done building graph")
 

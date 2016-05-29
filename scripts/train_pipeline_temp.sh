@@ -13,29 +13,16 @@ if [ -z "$2" ]
 fi
 
 
-if [ -z "$3" ]
-   then
-      echo "ERROR: Algorithm not specified."
-      exit
-fi
-
-if [ -z "$4" ]
-   then
-      echo "ERROR: Feature mode not specified."
-      exit
-fi
-
-
 INPUT_FILE=$1
 FEATURE_FILE=$INPUT_FILE'.feature'
-GRAPH_FILE=$INPUT_FILE'.graph'
+GRAPH_FILE=$INPUT_FILE'.encoded'
 
 DEV_INPUT_FILE=$2
 DEV_FEATURE_FILE=$DEV_INPUT_FILE'.feature'
-DEV_GRAPH_FILE=$DEV_INPUT_FILE'.graph'
+DEV_GRAPH_FILE=$DEV_INPUT_FILE'.encoded'
 
-ALGORITHM=$3
-FEATURE_MODE=$4
+ALGORITHM=fourway_lstm_final
+FEATURE_MODE=sentence
 
 MODEL_PATH=models/$ALGORITHM'.model'
 
